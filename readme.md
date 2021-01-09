@@ -7,14 +7,27 @@ Interestingly, it can be multiplied into "tritones".
 
 Triton is a standalone component that can be run on a machine. It will connect to a central instance (referred to as Poseidon) and get instructions to run on the local machine. The connection uses websockets for full duplex communication over a persistent connection while reusing the firewall friendly http protocol.
 
-This is primarily aimed at server management to automate:
+Triton will have three main responsibilities:
 
-- installation of software
-- software updates
-- ssh key management
-- ssh tunneling
-- restarting of services
-...
+- System health
+	- triton will use a heartbeat to send system information (disk space usage, cpu usage, memory usage...)
+	- the persistance of the connection and the heartbeat combine to make it easy to figure out if a system is down, poseidon can use this
+- Remote management
+	- triton allows management of arbitrary glue files to be pushed from poseidon
+	- this allows you to do all sorts of management automation like
+		- installation of software
+		- software updates
+		- ssh key management
+		- ssh tunneling
+		- restarting of services
+		...
+- CEF Events: triton will allow pushing 
+
+# Offline
+
+Ideally triton can still be used without poseidon, through a local interface. This would allow it to retain some of its features in environments where the central hookup is not allowed.
+We could set up a local socket (can only be connected to from localhost, ssh inbound is seen as localhost) that allows you to send commands?
+The local socket requirement prevents the need for identification.
 
 # Identifier
 

@@ -41,7 +41,7 @@ import be.nabu.libs.types.binding.xml.XMLBinding;
 import be.nabu.libs.types.java.BeanInstance;
 import be.nabu.libs.types.java.BeanResolver;
 
-public class TritonClient {
+public class TritonRemoteClient {
 	
 	private Logger logger = LoggerFactory.getLogger(getClass());
 	private EventDispatcher dispatcher;
@@ -59,7 +59,7 @@ public class TritonClient {
 	// the poseidon uri should be a fully qualified http endpoint, e.g.
 	// https://example.com/triton/{identifier}
 	// the identifier variable will be filled in at runtime
-	public TritonClient(String identifier, URI poseidon) {
+	public TritonRemoteClient(String identifier, URI poseidon) {
 		this.identifier = identifier;
 		this.poseidon = poseidon;
 		// for triton events
