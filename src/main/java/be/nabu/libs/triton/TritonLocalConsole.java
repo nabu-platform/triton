@@ -137,6 +137,9 @@ public class TritonLocalConsole {
 								writer.write(runtime.getExecutionContext().getPipeline().toString() + "\n");
 								writer.flush();
 							}
+							else if (line.equals("refresh")) {
+								engine.refresh();
+							}
 							// signal for multiline...
 							else if (trimmed.endsWith("\\")) {
 								buffered.append(line.replaceAll("[\\\\s]+$", "")).append("\n");
@@ -167,20 +170,20 @@ public class TritonLocalConsole {
 								// always delete buffered, even in case of failure, you can't fix it...
 								buffered.delete(0, buffered.toString().length());
 								Map<String, Object> pipeline = runtime.getExecutionContext().getPipeline();
-								if (pipeline.containsKey("$tmp")) {
-									Object remove = pipeline.remove("$tmp");
-									if (remove != null) {
-										writer.write(remove.toString().trim().replaceAll("(?m)^", output));
-										// after the echo we want a line feed
-										writer.write("\n");
-									}
-								}
+								Object remove = pipeline.remove("$tmp");
 								String releaseEcho = ScriptMethods.releaseEcho();
 								if (releaseEcho != null && !releaseEcho.trim().isEmpty()) {
 									writer.write(releaseEcho.trim().replaceAll("(?m)^", output));
 									// after the echo we want a line feed
 									writer.write("\n");
 									// because you submitted with a linefeed (always), we don't add one if we don't output echo
+								}
+								// if we don't have an echo, use the $tmp one
+								// calling glue scripts will always return the full pipeline, so combining that with echo is not good :(
+								else if (remove != null) {
+									writer.write(remove.toString().trim().replaceAll("(?m)^", output));
+									// after the echo we want a line feed
+									writer.write("\n");
 								}
 								// invite more typing
 								writer.write(SystemMethodProvider.getDirectory() + " " + input);
