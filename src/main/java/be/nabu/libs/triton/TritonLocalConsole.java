@@ -20,7 +20,6 @@ import org.slf4j.LoggerFactory;
 import be.nabu.glue.api.Executor;
 import be.nabu.glue.core.impl.executors.EvaluateExecutor;
 import be.nabu.glue.core.impl.methods.v2.ScriptMethods;
-import be.nabu.glue.core.impl.providers.SystemMethodProvider;
 import be.nabu.glue.impl.SimpleExecutionEnvironment;
 import be.nabu.glue.utils.DynamicScript;
 import be.nabu.glue.utils.ScriptRuntime;
@@ -86,6 +85,8 @@ public class TritonLocalConsole {
 		Thread thread = new Thread(new Runnable() {
 			@Override
 			public void run() {
+				// if we write the "input", our response does not stop with a linefeed
+				// anyone listening to end of line won't pick it up
 				String input = "$ ";
 				String output = "";
 				try {
@@ -103,10 +104,8 @@ public class TritonLocalConsole {
 					StringBuilder script = new StringBuilder();
 					BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), charset));
 					BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), charset));
-					writer.write("Triton Agent " + Main.VERSION + "\n");
-					writer.write(SystemMethodProvider.getDirectory() + " " + input);
-					writer.flush();
 					
+					String responseEnd = "";
 					String line;
 					while ((line = reader.readLine()) != null) {
 						try {
@@ -123,8 +122,10 @@ public class TritonLocalConsole {
 								break;
 							}
 							else if (line.equals("show")) {
-								writer.write(script.toString());
-								writer.flush();
+								writer.write(script.toString() + "\n");
+							}
+							else if (line.equals("version")) {
+								writer.write(Main.VERSION + "\n");
 							}
 							else if (line.equals("clear")) {
 								buffered.delete(0, buffered.toString().length());
@@ -133,7 +134,9 @@ public class TritonLocalConsole {
 							}
 							else if (line.equals("state")) {
 								writer.write(runtime.getExecutionContext().getPipeline().toString() + "\n");
-								writer.flush();
+							}
+							else if (line.startsWith("Negotiate-Response-End:")) {
+								responseEnd = line.substring("Negotiate-Response-End:".length()).trim();
 							}
 							else if (line.equals("refresh")) {
 								engine.refresh();
@@ -156,17 +159,18 @@ public class TritonLocalConsole {
 								ScriptRuntime scriptRuntime = new ScriptRuntime(virtualScript, runtime.getExecutionContext(), null);
 								scriptRuntime.run();
 								script.append(buffered).append("\n");
+								buffered.delete(0, buffered.toString().length());
 							}
 						}
 						catch (Exception e) {
 							e.printStackTrace(new PrintWriter(writer));
 							writer.write("\n");
 							writer.flush();
+							// always delete buffered, even in case of failure, you can't fix it...
+							buffered.delete(0, buffered.toString().length());
 						}
 						finally {
 							if (!socket.isClosed()) {
-								// always delete buffered, even in case of failure, you can't fix it...
-								buffered.delete(0, buffered.toString().length());
 								Map<String, Object> pipeline = runtime.getExecutionContext().getPipeline();
 								Object remove = pipeline.remove("$tmp");
 								String releaseEcho = ScriptMethods.releaseEcho();
@@ -183,8 +187,11 @@ public class TritonLocalConsole {
 									// after the echo we want a line feed
 									writer.write("\n");
 								}
+								if (!responseEnd.isEmpty()) {
+									writer.write(responseEnd + "\n");
+								}
 								// invite more typing
-								writer.write(SystemMethodProvider.getDirectory() + " " + input);
+//								writer.write(input);
 								writer.flush();
 							}
 						}

@@ -1,10 +1,12 @@
 package be.nabu.libs.triton;
 
+import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.io.Reader;
 import java.net.Socket;
 
 import org.jline.reader.LineReader;
@@ -24,29 +26,53 @@ public class TritonShell {
 	
 	public static String VERSION = "0.1-beta";
 	
+	private static String readAnswer(BufferedReader reader, String ending) throws IOException {
+		String line;
+		StringBuilder builder = new StringBuilder();
+		while ((line = reader.readLine()) != null) {
+			if (line.equals(ending)) {
+				break;
+			}
+			else {
+				builder.append(line).append("\n");
+			}
+		}
+		if (line == null) {
+			System.exit(1);
+		}
+		return builder.toString();
+	}
+	
 	public static void main(String...args) {
 		try {
 			Socket socket = new Socket("localhost", 5000);
 			try {
-				System.out.println("Welcome to Triton Shell v" + VERSION);
-				System.out.print("Connected to ");
+				Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
+					@Override
+					public void run() {
+						System.out.println("Exiting Triton Shell");
+					}
+				}));
 				
-				Attributes termAttribs = new Attributes();
+				// we keep an eye on the socket, if it is remotely closed, we want to know about it
+				Thread thread = new Thread(new Runnable() {
+					@Override
+					public void run() {
+						while (socket.isConnected()) {
+							try {
+								Thread.sleep(1000);
+							}
+							catch (InterruptedException e) {
+								// ignore
+							}
+						}
+						System.exit(1);
+					}
+				});
+				thread.setName("socket-watcher");
+				thread.setDaemon(true);
+				thread.start();
 				
-				// enable output processing (required for all output flags)
-				termAttribs.setOutputFlag(OutputFlag.OPOST, true);
-				// map newline to carriage return + newline
-				termAttribs.setOutputFlag(OutputFlag.ONLCR, true);
-				
-				// enable signals (for CTRL+C usage)
-				termAttribs.setLocalFlag(LocalFlag.ISIG, true);
-				// print control chars as '^X' (e.g. ^C for CTRL+C)
-				termAttribs.setLocalFlag(LocalFlag.ECHOCTL, true);
-				
-				// enable CTRL+D shortcut
-				termAttribs.setControlChar(ControlChar.VEOF, 4);
-				// enable CTRL+C shortcut
-				termAttribs.setControlChar(ControlChar.VINTR, 3);
 				Terminal terminal = TerminalBuilder.builder()
 						.name("Triton v" + Main.VERSION)
 						.signalHandler(Terminal.SignalHandler.SIG_IGN)
@@ -54,34 +80,21 @@ public class TritonShell {
 						//			.attributes(termAttribs)
 						.build();
 				
-				InputStreamReader reader = new InputStreamReader(socket.getInputStream(), "UTF-8");
+				BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), "UTF-8"));
 				BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), "UTF-8"));
 				
-				Thread thread = new Thread(new Runnable() {
-					@Override
-					public void run() {
-						try {
-							int result;
-							byte [] array = new byte[1];
-							while ((result = reader.read()) >= 0) {
-								array[0] = (byte) result;
-//								System.out.print((char)result);
-//								terminal.writer().print((char) result);
-								terminal.writer().print(new String(array, "UTF-8"));
-								terminal.writer().flush();
-							}
-							socket.close();
-						}
-						catch (Exception e) {
-							// do nothing...
-						}
-						finally {
-							System.exit(1);
-						}
-					}
-				});
-				thread.setDaemon(true);
-				thread.start();
+				String ending = "//the--end//";
+				// we set a requested ending to each response so we can target that in our parsing
+				// we do this as the first step so we can parse the next steps correctly
+				writer.write("Negotiate-Response-End: " + ending + "\n");
+				writer.flush();
+				// an answer will always come
+				readAnswer(reader, ending);
+				writer.write("version\n");
+				writer.flush();
+				String version = readAnswer(reader, ending);
+				
+				terminal.writer().println("Triton Shell v" + VERSION + " connected to Triton Agent v" + version);
 				
 				File history = new File(System.getProperty("user.home"), ".triton_shell_history");
 				LineReader consoleReader = LineReaderBuilder.builder()
@@ -98,17 +111,21 @@ public class TritonShell {
 				// it doesn't seem to work (unfortunately) with an empty string
 				// the space does tend to remain in unwanted places if content comes back from the server though...
 				// we could get rid of the space but then we need a proper prompt here, which will interfere with the prompt via telnet so we would have to crippled the straight-to-telnet shizzle
-				while ((line = consoleReader.readLine(" ")) != null) {
+				while ((line = consoleReader.readLine("$ ")) != null) {
 					if (line.equals("clear")) {
                         terminal.puts(Capability.clear_screen);
                         terminal.flush();
 					}
 					writer.write(line + "\n");
 					writer.flush();
+					String readAnswer = readAnswer(reader, ending);
+					if (!readAnswer.isEmpty()) {
+						terminal.writer().write(readAnswer);
+						terminal.writer().flush();
+					}
 				}
 			}
 			catch (Exception e) {
-				System.out.println("Exiting Triton Shell");
 				// exiting...
 				try {
 					if (!socket.isClosed()) {
@@ -117,7 +134,6 @@ public class TritonShell {
 				}
 				catch (IOException e1) {
 					// TODO Auto-generated catch block
-					e1.printStackTrace();
 				}
 			}
 		}
