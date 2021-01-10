@@ -5,7 +5,7 @@ import java.io.File;
 import be.nabu.libs.resources.file.FileDirectory;
 
 public class Main {
-	public static final String version = "0.1-beta";
+	public static final String VERSION = "0.1-beta";
 	
 	public static void main(String...args) {
 		File target = new File(System.getProperty("user.home"), "scripts");

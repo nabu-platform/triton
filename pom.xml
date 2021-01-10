@@ -90,6 +90,20 @@
 			<artifactId>resources-file</artifactId>
 		</dependency>
 		
+		
+		<!-- https://mvnrepository.com/artifact/org.jline/jline -->
+		<dependency>
+		    <groupId>org.jline</groupId>
+		    <artifactId>jline</artifactId>
+		    <version>3.18.0</version>
+		</dependency>
+		<!-- https://mvnrepository.com/artifact/org.jline/jline-terminal -->
+		<dependency>
+		    <groupId>org.jline</groupId>
+		    <artifactId>jline-terminal</artifactId>
+		    <version>3.18.0</version>
+		</dependency>
+		
 		<dependency>
 		    <groupId>com.github.oshi</groupId>
 		    <artifactId>oshi-core</artifactId>

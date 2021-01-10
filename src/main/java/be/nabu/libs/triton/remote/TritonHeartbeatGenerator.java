@@ -1,9 +1,9 @@
-package be.nabu.libs.triton;
+package be.nabu.libs.triton.remote;
 
 import java.util.ArrayList;
 import java.util.List;
 
-import be.nabu.libs.triton.TritonHeartbeat.TritonFileSystem;
+import be.nabu.libs.triton.remote.TritonHeartbeat.TritonFileSystem;
 import oshi.SystemInfo;
 import oshi.hardware.CentralProcessor;
 import oshi.hardware.CentralProcessor.TickType;

@@ -103,9 +103,7 @@ public class TritonLocalConsole {
 					StringBuilder script = new StringBuilder();
 					BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), charset));
 					BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), charset));
-					writer.write("# ------------------------------------\n");
-					writer.write("# Welcome to Triton " + Main.version + "\n");
-					writer.write("# ------------------------------------\n");
+					writer.write("Triton Agent " + Main.VERSION + "\n");
 					writer.write(SystemMethodProvider.getDirectory() + " " + input);
 					writer.flush();
 					

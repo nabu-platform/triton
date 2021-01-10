@@ -1,4 +1,4 @@
-package be.nabu.libs.triton;
+package be.nabu.libs.triton.remote;
 
 import java.util.List;
 
