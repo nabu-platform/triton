@@ -6,15 +6,11 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
-import java.io.Reader;
 import java.net.Socket;
 
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
-import org.jline.terminal.Attributes;
-import org.jline.terminal.Attributes.ControlChar;
-import org.jline.terminal.Attributes.LocalFlag;
-import org.jline.terminal.Attributes.OutputFlag;
+import org.jline.reader.impl.DefaultParser;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
 import org.jline.utils.AttributedString;
@@ -94,15 +90,37 @@ public class TritonShell {
 				writer.flush();
 				String version = readAnswer(reader, ending);
 				
-				terminal.writer().println("Triton Shell v" + VERSION + " connected to Triton Agent v" + version);
+				terminal.puts(Capability.clear_screen);
+                terminal.flush();
+                terminal.writer().println("_______________________________________________________________\n");
+				terminal.writer().println("** Triton Shell v" + VERSION + " connected to Triton Agent v" + version.trim());
+				terminal.writer().println("_______________________________________________________________\n");
+				terminal.writer().println("quit			disconnect from the triton agent (ctrl+c)");
+				terminal.writer().println("clear			clear the state");
+				// you can also end a regular line with a backslash for the same effect!
+				terminal.writer().println("alt+enter		create a multiline script");
+				terminal.writer().println("show			show the script so far");
+				terminal.writer().println("state			print the current variable state");
+				terminal.writer().println("_______________________________________________________________\n");
+				
+				// we unset the escape characters so we can send them to the backend, otherwise they get stripped
+				DefaultParser parser = new DefaultParser();
+				parser.setEscapeChars(null);
 				
 				File history = new File(System.getProperty("user.home"), ".triton_shell_history");
 				LineReader consoleReader = LineReaderBuilder.builder()
 					.terminal(terminal)
+					.parser(parser)
 					.variable(LineReader.HISTORY_FILE, history.toPath())
 					.variable(LineReader.SECONDARY_PROMPT_PATTERN, colored("%P -> "))
 					.variable(LineReader.BLINK_MATCHING_PAREN, 0)
+					.variable(LineReader.DISABLE_COMPLETION, true)
 					.build();
+				
+				// we want to be able to insert bleedin' tabs
+				consoleReader.setOpt(LineReader.Option.INSERT_TAB);
+//				consoleReader.unsetOpt(LineReader.Option.AUTO_MENU);
+//				consoleReader.unsetOpt(LineReader.Option.AUTO_MENU_LIST);
 				
 				String line;
 				// the string we pass along is the "prompt" string
@@ -116,12 +134,17 @@ public class TritonShell {
                         terminal.puts(Capability.clear_screen);
                         terminal.flush();
 					}
-					writer.write(line + "\n");
-					writer.flush();
-					String readAnswer = readAnswer(reader, ending);
-					if (!readAnswer.isEmpty()) {
-						terminal.writer().write(readAnswer);
-						terminal.writer().flush();
+					// we need to send line by line so we can read the response
+					String[] split = line.split("\n");
+					for (int i = 0; i < split.length; i++) {
+						// if we are not at the end yet, add the \ to signal that more is coming
+						writer.write(split[i] + (i == split.length - 1 ? "" : "\\") + "\n");
+						writer.flush();
+						String readAnswer = readAnswer(reader, ending);
+						if (!readAnswer.isEmpty()) {
+							terminal.writer().write(readAnswer);
+							terminal.writer().flush();
+						}
 					}
 				}
 			}

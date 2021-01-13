@@ -2,8 +2,6 @@ package be.nabu.libs.triton;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
@@ -11,8 +9,13 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketException;
 import java.nio.charset.Charset;
+import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +27,8 @@ import be.nabu.glue.impl.SimpleExecutionEnvironment;
 import be.nabu.glue.utils.DynamicScript;
 import be.nabu.glue.utils.ScriptRuntime;
 import be.nabu.glue.utils.VirtualScript;
+import be.nabu.libs.triton.api.ConsoleSource;
+import be.nabu.libs.triton.impl.ConsoleSocketSource;
 
 public class TritonLocalConsole {
 
@@ -32,10 +37,47 @@ public class TritonLocalConsole {
 	private int port;
 	private Charset charset = Charset.forName("UTF-8");
 	private boolean running;
+	private int maxConcurrentConsoles;
+	private ExecutorService threadPool;
+	private long consoleInstanceId;
 	
-	public TritonLocalConsole(int port, TritonGlueEngine engine) {
+	private List<TritonConsoleInstance> instances = new ArrayList<TritonConsoleInstance>();
+	
+	public class TritonConsoleInstance implements AutoCloseable {
+		private ConsoleSource source;
+		private ScriptRuntime rootRuntime;
+		private long id;
+		private Date connected = new Date();
+		TritonConsoleInstance(ConsoleSource source, ScriptRuntime rootRuntime) {
+			this.source = source;
+			this.rootRuntime = rootRuntime;
+			this.id = consoleInstanceId++;
+		}
+		@Override
+		public void close() throws Exception {
+			rootRuntime.abort();
+			source.close();
+		}
+		@Override
+		public String toString() {
+			return "#" + id + "-" + source.toString() + "-" + connected;
+		}
+		public long getId() {
+			return id;
+		}
+	}
+	
+	public TritonLocalConsole(int port, TritonGlueEngine engine, int maxConcurrentConsoles) {
 		this.port = port;
 		this.engine = engine;
+		threadPool = Executors.newFixedThreadPool(maxConcurrentConsoles, new ThreadFactory() {
+			@Override
+			public Thread newThread(Runnable r) {
+				Thread newThread = Executors.defaultThreadFactory().newThread(r);
+				newThread.setName("triton-console-instance");
+				return newThread;
+			}
+		});
 	}
 	
 	public static boolean isLocal(InetAddress address) {
@@ -66,7 +108,7 @@ public class TritonLocalConsole {
 								accept.close();
 							}
 							else {
-								start(accept);
+								start(new ConsoleSocketSource(accept, charset));
 							}
 						}
 					}
@@ -81,33 +123,40 @@ public class TritonLocalConsole {
 		thread.start();
 	}
 	
-	private void start(Socket socket) {
-		Thread thread = new Thread(new Runnable() {
+	private void start(ConsoleSource source) {
+		threadPool.submit(new Runnable() {
 			@Override
 			public void run() {
 				// if we write the "input", our response does not stop with a linefeed
 				// anyone listening to end of line won't pick it up
-				String input = "$ ";
-				String output = "";
+				ScriptRuntime runtime = null;
+				TritonConsoleInstance instance = null;
 				try {
 					SimpleExecutionEnvironment environment = new SimpleExecutionEnvironment("default");
 					DynamicScript dynamicScript = new DynamicScript(
 						engine.getRepository(), 
 						engine.getRepository().getParserProvider().newParser(engine.getRepository(), "dynamic.glue"));
-					ScriptRuntime runtime = new ScriptRuntime(dynamicScript, 
+					runtime = new ScriptRuntime(dynamicScript, 
 						environment, 
 						false, 
 						null
 					);
+					instance = new TritonConsoleInstance(source, runtime);
+					logger.info("Triton console #" + instance.getId() + " connected");
+					instances.add(instance);
 					runtime.registerInThread();
+					// TODO: token?
 					StringBuilder buffered = new StringBuilder();
 					StringBuilder script = new StringBuilder();
-					BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), charset));
-					BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), charset));
+					BufferedReader reader = new BufferedReader(source.getReader());
+					BufferedWriter writer = new BufferedWriter(source.getWriter());
 					
 					String responseEnd = "";
 					String line;
 					while ((line = reader.readLine()) != null) {
+						if (runtime.isAborted()) {
+							break;
+						}
 						try {
 							String trimmed = line.trim();
 							if (trimmed.isEmpty()) {
@@ -118,7 +167,7 @@ public class TritonLocalConsole {
 							}
 							// if without trimming, you still typed quit (so no whitespace etc), we stop
 							else if (line.equals("quit")) {
-								socket.close();
+								source.close();
 								break;
 							}
 							else if (line.equals("show")) {
@@ -170,12 +219,12 @@ public class TritonLocalConsole {
 							buffered.delete(0, buffered.toString().length());
 						}
 						finally {
-							if (!socket.isClosed()) {
+							if (!source.isClosed()) {
 								Map<String, Object> pipeline = runtime.getExecutionContext().getPipeline();
 								Object remove = pipeline.remove("$tmp");
 								String releaseEcho = ScriptMethods.releaseEcho();
 								if (releaseEcho != null && !releaseEcho.trim().isEmpty()) {
-									writer.write(releaseEcho.trim().replaceAll("(?m)^", output));
+									writer.write(releaseEcho.trim());	// .replaceAll("(?m)^", output)
 									// after the echo we want a line feed
 									writer.write("\n");
 									// because you submitted with a linefeed (always), we don't add one if we don't output echo
@@ -183,7 +232,7 @@ public class TritonLocalConsole {
 								// if we don't have an echo, use the $tmp one
 								// calling glue scripts will always return the full pipeline, so combining that with echo is not good :(
 								else if (remove != null) {
-									writer.write(remove.toString().trim().replaceAll("(?m)^", output));
+									writer.write(remove.toString().trim());
 									// after the echo we want a line feed
 									writer.write("\n");
 								}
@@ -196,14 +245,29 @@ public class TritonLocalConsole {
 							}
 						}
 					}
+					logger.info("Triton console #" + instance.getId() + " disconnected");
 				}
 				catch (Exception e) {
-					logger.error("Triton console instance stopped", e);
+					logger.info("Triton console #" + instance.getId() + " disconnected");
+				}
+				finally {
+					if (instance != null) {
+						instances.remove(instance);
+					}
+					if (runtime != null) {
+						runtime.unregisterInThread();
+					}
 				}
 			}
 		});
-//		thread.setDaemon(true);
-		thread.setName("triton-socket-" + socket.getRemoteSocketAddress());
-		thread.start();
 	}
+
+	public List<TritonConsoleInstance> getInstances() {
+		return instances;
+	}
+
+	public int getMaxConcurrentConsoles() {
+		return maxConcurrentConsoles;
+	}
+	
 }
