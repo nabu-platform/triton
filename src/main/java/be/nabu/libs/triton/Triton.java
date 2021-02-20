@@ -37,7 +37,8 @@ public class Triton {
 	}
 	
 	public static File getFolder() {
-		File tritonFolder = new File(System.getProperty("user.home"), ".triton");
+		String folder = System.getProperty("triton.folder", ".triton");
+		File tritonFolder = new File(System.getProperty("user.home"), folder);
 		if (!tritonFolder.exists()) {
 			tritonFolder.mkdirs();
 		}

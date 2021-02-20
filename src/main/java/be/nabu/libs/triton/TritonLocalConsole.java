@@ -18,7 +18,6 @@ import java.net.Socket;
 import java.net.SocketException;
 import java.nio.charset.Charset;
 import java.security.KeyPair;
-import java.security.KeyStore;
 import java.security.PrivateKey;
 import java.security.SecureRandom;
 import java.security.cert.X509Certificate;
@@ -58,7 +57,7 @@ import be.nabu.utils.security.StoreType;
 
 public class TritonLocalConsole {
 
-	private Logger logger = LoggerFactory.getLogger(getClass());
+	private static Logger logger = LoggerFactory.getLogger(TritonLocalConsole.class);
 	private TritonGlueEngine engine;
 	private Integer unsecurePort, securePort;
 	private Charset charset = Charset.forName("UTF-8");
@@ -66,8 +65,13 @@ public class TritonLocalConsole {
 	private int maxConcurrentConsoles;
 	private ExecutorService threadPool;
 	private long consoleInstanceId;
+	// if we turn this on, we require a verified certificate to be installed on the triton installation
+	private boolean clientAuth = true;
+	
+	private SSLServerSocket sslSocket;
 	
 	private List<TritonConsoleInstance> instances = new ArrayList<TritonConsoleInstance>();
+	private Thread secureThread;
 	
 	public class TritonConsoleInstance implements AutoCloseable {
 		private ConsoleSource source;
@@ -121,10 +125,10 @@ public class TritonLocalConsole {
 	}
 	
 	public void start() {
+		running = true;
 		Thread unsecureThread = new Thread(new Runnable() {
 			@Override
 			public void run() {
-				running = true;
 				try {
 					try (ServerSocket socket = new ServerSocket(unsecurePort)) {
 						while (running) {
@@ -151,17 +155,44 @@ public class TritonLocalConsole {
 			unsecureThread.start();
 		}
 		
-		Thread secureThread = new Thread(new Runnable() {
-			@Override
-			public void run() {
-				running = true;
-				try {
-					try (ServerSocket socket = getContext().getServerSocketFactory().createServerSocket(securePort)) {
-						while (running) {
-							Socket accept = socket.accept();
+		startSecureThread();
+	}
+
+	public void restartSecureThread() {
+		startSecureThread();
+	}
+	
+	private void startSecureThread() {
+		if (sslSocket != null) {
+			try {
+				sslSocket.close();
+			}
+			catch (IOException e) {
+				// ignore
+			}
+		}
+		if (secureThread != null) {
+			try {
+				secureThread.join();
+			}
+			catch (Exception e) {
+				e.printStackTrace();
+				// ignore
+			}
+			secureThread = null;
+		}
+		if (securePort != null) {
+			secureThread = new Thread(new Runnable() {
+				@Override
+				public void run() {
+					try {
+						sslSocket = (SSLServerSocket) getContext("triton-server").getServerSocketFactory().createServerSocket(securePort);
+						sslSocket.setNeedClientAuth(clientAuth);
+						while (running && !sslSocket.isClosed()) {
+							Socket accept = sslSocket.accept();
 							// because we don't require authentication, it _must_ come from a local address to ensure you have access
 							// in the future we can expand upon this with some authentication scheme
-							if (!isLocal(accept.getInetAddress())) {
+							if (!clientAuth && !isLocal(accept.getInetAddress())) {
 								accept.close();
 							}
 							else {
@@ -169,38 +200,41 @@ public class TritonLocalConsole {
 							}
 						}
 					}
+					catch (Exception e) {
+						logger.error("Triton console server stopped: " + e.getMessage());
+					}
+					finally {
+						try {
+							sslSocket.close();
+						}
+						catch (Exception e) {
+							// ignore
+						}
+					}
 				}
-				catch (Exception e) {
-					logger.error("Triton console server stopped", e);
-				}
-			}
-		});
-//		thread.setDaemon(true);
-		secureThread.setName("triton-cli-secure");
-		if (securePort != null) {
+			});
+	//		thread.setDaemon(true);
+			secureThread.setName("triton-cli-secure");
 			secureThread.start();
 		}
 	}
 	
-	private SSLContext getContext() {
+	public static SSLContext getContext(String alias) {
 		try {
 			KeyStoreHandler keystore = getKeystore();
-			PrivateKey privateKey = keystore.getPrivateKey("triton-key", "triton");
+			PrivateKey privateKey = keystore.getPrivateKey(alias, "triton");
 			// if we don't have a key yet, generate a self signed set
 			if (privateKey == null) {
 				KeyPair pair = SecurityUtils.generateKeyPair(KeyPairType.RSA, 4096);
 				X500Principal principal = SecurityUtils.createX500Principal("triton", "celerium", "nabu", "antwerp", "antwerp", "belgium");
 				X509Certificate certificate = BCSecurityUtils.generateSelfSignedCertificate(pair, new Date(new Date().getTime() + (1000l * 60 * 60 * 24 * 365 * 100)), principal, principal);
-				keystore.set("triton-key", pair.getPrivate(), new X509Certificate[] { certificate }, "triton");
-				File store = new File(Triton.getFolder(), "keystore.jks");
-				try (OutputStream output = new BufferedOutputStream(new FileOutputStream(store))) {
-					keystore.save(output, getKeystorePassword());
-				}
+				keystore.set(alias, pair.getPrivate(), new X509Certificate[] { certificate }, "triton");
+				save(keystore);
 			}
 			KeyManager[] keyManagers = keystore.getKeyManagers("triton");
 			for (int i = 0; i < keyManagers.length; i++) {
 				if (keyManagers[i] instanceof X509KeyManager) {
-					keyManagers[i] = new AliasKeyManager((X509KeyManager) keyManagers[i], "triton");
+					keyManagers[i] = new AliasKeyManager((X509KeyManager) keyManagers[i], alias);
 				}
 			}
 			SSLContext context = SSLContext.getInstance(SSLContextType.TLS.toString());
@@ -213,7 +247,7 @@ public class TritonLocalConsole {
 		}
 	}
 	
-	private KeyStoreHandler getKeystore() {
+	public static KeyStoreHandler getKeystore() {
 		try {
 			File store = new File(Triton.getFolder(), "keystore.jks");
 			String password = getKeystorePassword();
@@ -233,8 +267,20 @@ public class TritonLocalConsole {
 			throw new RuntimeException(e);
 		}
 	}
+	
+	public static void save(KeyStoreHandler keystore) {
+		try {
+			File store = new File(Triton.getFolder(), "keystore.jks");
+			try (OutputStream output = new BufferedOutputStream(new FileOutputStream(store))) {
+				keystore.save(output, getKeystorePassword());
+			}
+		}
+		catch (Exception e) {
+			throw new RuntimeException(e);
+		}
+	}
 
-	private String getKeystorePassword() {
+	private static String getKeystorePassword() {
 		return System.getProperty("triton-keystore-password", "triton-keystore");
 	}
 	
@@ -388,7 +434,7 @@ public class TritonLocalConsole {
 					logger.info("Triton console #" + instance.getId() + " disconnected");
 				}
 				catch (Exception e) {
-					logger.info("Triton console #" + instance.getId() + " disconnected");
+					logger.info("Triton console #" + instance.getId() + " disconnected: " + e.getMessage());
 				}
 				finally {
 					if (instance != null) {

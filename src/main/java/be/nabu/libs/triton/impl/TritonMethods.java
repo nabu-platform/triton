@@ -1,10 +1,20 @@
 package be.nabu.libs.triton.impl;
 
+import java.io.ByteArrayInputStream;
+import java.io.UnsupportedEncodingException;
+import java.security.KeyStoreException;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import be.nabu.libs.evaluator.annotations.MethodProviderClass;
 import be.nabu.libs.triton.Triton;
+import be.nabu.libs.triton.TritonLocalConsole;
 import be.nabu.libs.triton.TritonLocalConsole.TritonConsoleInstance;
+import be.nabu.utils.security.KeyStoreHandler;
+import be.nabu.utils.security.SecurityUtils;
 
 // a "package" can be anything?
 // for example it could be scripts (most likely) but also like...nabu repository entries?
@@ -86,6 +96,34 @@ public class TritonMethods {
 	// Update a specific list of artifacts or (if empty) every artifact
 	public void update(String...artifactId) {
 		
+	}
+	
+	public List<String> allowed() throws KeyStoreException {
+		KeyStoreHandler keystore = TritonLocalConsole.getKeystore();
+		Map<String, X509Certificate> certificates = keystore.getCertificates();
+		List<String> aliases = new ArrayList<String>();
+		for (String key : certificates.keySet()) {
+			if (key.startsWith("user-")) {
+				aliases.add(key.substring("user-".length()));
+			}
+		}
+		return aliases;
+	}
+	
+	public void allow(String alias, String cert) throws KeyStoreException, CertificateException, UnsupportedEncodingException {
+		KeyStoreHandler keystore = TritonLocalConsole.getKeystore();
+		keystore.set("user-" + alias, SecurityUtils.parseCertificate(new ByteArrayInputStream(cert.getBytes("ASCII"))));
+		TritonLocalConsole.save(keystore);
+		// restart thread so the new cert is valid
+		triton.getConsole().restartSecureThread();
+	}
+	
+	public void disallow(String alias) throws KeyStoreException {
+		KeyStoreHandler keystore = TritonLocalConsole.getKeystore();
+		keystore.delete("user-" + alias);
+		TritonLocalConsole.save(keystore);
+		// restart thread so the new cert is valid
+		triton.getConsole().restartSecureThread();
 	}
 
 }

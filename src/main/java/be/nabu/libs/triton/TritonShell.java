@@ -6,7 +6,15 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.io.StringWriter;
+import java.net.InetAddress;
 import java.net.Socket;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.security.cert.X509Certificate;
+import java.util.Map;
+
+import javax.net.ssl.SSLContext;
 
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
@@ -16,6 +24,11 @@ import org.jline.terminal.TerminalBuilder;
 import org.jline.utils.AttributedString;
 import org.jline.utils.AttributedStyle;
 import org.jline.utils.InfoCmp.Capability;
+
+import be.nabu.glue.impl.StandardInputProvider;
+import be.nabu.utils.security.KeyStoreHandler;
+import be.nabu.utils.security.SSLContextType;
+import be.nabu.utils.security.SecurityUtils;
 
 // the shell is a thin wrapper around the triton console endpoint (that can also be used via telnet)
 public class TritonShell {
@@ -40,17 +53,60 @@ public class TritonShell {
 		return builder.toString();
 	}
 	
-	public static void main(String...args) {
+	public static void main(String...args) throws URISyntaxException {
+		// the connection string
+		// e.g. ts://localhost:5000, the protocol stands for "triton shell" or "triton socket"
+		// secure is sts://localhost:5100: secure triton shell
+//		URI url = new URI(Main.getArgument("url", "ts://localhost:5000", args));
+		URI url = new URI(Main.getArgument("url", "sts://localhost:5100", args));
 		try {
-			Socket socket = new Socket("localhost", 5000);
-			try {
-				Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
-					@Override
-					public void run() {
-						System.out.println("Exiting Triton Shell");
+			Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
+				@Override
+				public void run() {
+					System.out.println("Exiting Triton Shell");
+				}
+			}));
+			
+			String alias = InetAddress.getLocalHost().getHostName();
+			
+			// always generate the ssl context so we have the key
+			SSLContext context = TritonLocalConsole.getContext(alias);
+			
+			Socket socket;
+			// we are doing secure stuff
+			if ("sts".equals(url.getScheme())) {
+				// make sure we already trust the target server
+				String host = url.getHost() == null ? "localhost" : url.getHost();
+				int port = url.getPort() < 0 ? 5100 : url.getPort();
+				X509Certificate[] chain = SecurityUtils.getChain(host, port, SSLContextType.TLS);
+				KeyStoreHandler keystore = TritonLocalConsole.getKeystore();
+				Map<String, X509Certificate> certificates = keystore.getCertificates();
+				if (!certificates.values().contains(chain[0])) {
+					StandardInputProvider inputProvider = new StandardInputProvider();
+					String result = inputProvider.input("Connecting to unknown server '" + host + "', do you trust this server? [Y/n]: ", false);
+					if (result != null && result.equalsIgnoreCase("n")) {
+						System.exit(0);
 					}
-				}));
-				
+					String key = "server-" + host;
+					String keyAttempt = key;
+					int counter = 1;
+					while (certificates.containsKey(keyAttempt)) {
+						keyAttempt = key + counter++;
+					}
+					keystore.set(keyAttempt, chain[0]);
+					TritonLocalConsole.save(keystore);
+					// renew context with the cert installed
+					context = TritonLocalConsole.getContext(alias);
+				}
+				socket = context.getSocketFactory().createSocket(host, port);
+			}
+			else if (url.getScheme() == null || "ts".equals(url.getScheme())) {
+				socket = new Socket(url.getHost() == null ? "localhost" : url.getHost(), url.getPort() < 0 ? 5000 : url.getPort());
+			}
+			else {
+				throw new RuntimeException("Invalid scheme: " + url);
+			}
+			try {
 				// we keep an eye on the socket, if it is remotely closed, we want to know about it
 				Thread thread = new Thread(new Runnable() {
 					@Override
@@ -114,6 +170,8 @@ public class TritonShell {
 				terminal.writer().println("- alt+enter		Create a multiline script");
 				terminal.writer().println("- show			Show the script so far");
 				terminal.writer().println("- state			Print the current variable state");
+				terminal.writer().println("- allow			Add client cert to server to connect securely");
+				terminal.writer().println("- self			Print client cert for installation");
 				terminal.writer().println("_______________________________________________________________\n");
 				
 				// we unset the escape characters so we can send them to the backend, otherwise they get stripped
@@ -143,9 +201,29 @@ public class TritonShell {
 				// the space does tend to remain in unwanted places if content comes back from the server though...
 				// we could get rid of the space but then we need a proper prompt here, which will interfere with the prompt via telnet so we would have to cripple the straight-to-telnet shizzle
 				while ((line = consoleReader.readLine("$ ")) != null) {
+					if (line.equals("self")) {
+						X509Certificate certificate = TritonLocalConsole.getKeystore().getCertificate(alias);
+						StringWriter certWriter = new StringWriter();
+						SecurityUtils.encodeCertificate(certificate, certWriter);
+						certWriter.flush();
+						terminal.writer().println(certWriter.toString());
+						terminal.writer().flush();
+						continue;
+					}
+					// install the cert
+					if (line.equals("allow")) {
+						X509Certificate certificate = TritonLocalConsole.getKeystore().getCertificate(alias);
+						StringWriter certWriter = new StringWriter();
+						SecurityUtils.encodeCertificate(certificate, certWriter);
+						certWriter.flush();
+						line = "allow(\"" + alias + "\", \"" + certWriter.toString().replaceAll("[\r\n]+", "\n\t") + "\")";
+					}
 					if (line.equals("clear")) {
                         terminal.puts(Capability.clear_screen);
                         terminal.flush();
+					}
+					if (line.equals("quit")) {
+						break;
 					}
 					// we need to send line by line so we can read the response
 					String[] split = line.split("\n");
