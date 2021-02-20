@@ -91,6 +91,11 @@
 		</dependency>
 		
 		<dependency>
+			<groupId>be.nabu.libs.authentication</groupId>
+			<artifactId>authentication-api</artifactId>
+		</dependency>
+		
+		<dependency>
 			<groupId>be.nabu.utils</groupId>
 			<artifactId>utils-security</artifactId>
 		</dependency>

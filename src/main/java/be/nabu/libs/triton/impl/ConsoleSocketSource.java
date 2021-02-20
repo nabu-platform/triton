@@ -10,7 +10,6 @@ import java.net.SocketAddress;
 import java.nio.charset.Charset;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
-import java.util.Map;
 
 import javax.net.ssl.SSLSocket;
 
@@ -59,6 +58,10 @@ public class ConsoleSocketSource implements ConsoleSource {
 	
 	public SocketAddress getRemote() {
 		return socket.getRemoteSocketAddress();
+	}
+	
+	public Socket getSocket() {
+		return socket;
 	}
 
 	public X509Certificate getCertificate() {

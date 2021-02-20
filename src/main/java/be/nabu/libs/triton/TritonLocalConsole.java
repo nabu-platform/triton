@@ -15,6 +15,7 @@ import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketAddress;
 import java.net.SocketException;
 import java.nio.charset.Charset;
 import java.security.KeyPair;
@@ -46,6 +47,10 @@ import be.nabu.glue.impl.formatters.SimpleOutputFormatter;
 import be.nabu.glue.utils.DynamicScript;
 import be.nabu.glue.utils.ScriptRuntime;
 import be.nabu.glue.utils.VirtualScript;
+import be.nabu.libs.authentication.api.Authenticator;
+import be.nabu.libs.authentication.api.RoleHandler;
+import be.nabu.libs.authentication.api.Token;
+import be.nabu.libs.authentication.impl.BasicPrincipalImpl;
 import be.nabu.libs.triton.api.ConsoleSource;
 import be.nabu.libs.triton.impl.ConsoleSocketSource;
 import be.nabu.utils.security.AliasKeyManager;
@@ -58,6 +63,9 @@ import be.nabu.utils.security.StoreType;
 
 public class TritonLocalConsole {
 
+	private Authenticator authenticator;
+	private RoleHandler roleHandler;
+	
 	private static Logger logger = LoggerFactory.getLogger(TritonLocalConsole.class);
 	private TritonGlueEngine engine;
 	private Integer unsecurePort, securePort;
@@ -68,6 +76,8 @@ public class TritonLocalConsole {
 	private long consoleInstanceId;
 	// if we turn this on, we require a verified certificate to be installed on the triton installation
 	private boolean clientAuth = true;
+	// whether you need additional password authentication
+	private boolean passwordAuth = false;
 	
 	private SSLServerSocket sslSocket;
 	
@@ -75,6 +85,7 @@ public class TritonLocalConsole {
 	private Thread secureThread;
 	
 	public class TritonConsoleInstance implements AutoCloseable {
+		private Token token;
 		private ConsoleSource source;
 		private ScriptRuntime rootRuntime;
 		private long id;
@@ -91,10 +102,19 @@ public class TritonLocalConsole {
 		}
 		@Override
 		public String toString() {
-			return "#" + id + "-" + source.toString() + "-" + connected;
+			return "#" + id + "-" + (token == null ? "anonymous" : token.getName()) + "-" + connected;
 		}
 		public long getId() {
 			return id;
+		}
+		public Token getToken() {
+			return token;
+		}
+		public void setToken(Token token) {
+			this.token = token;
+		}
+		public ConsoleSource getSource() {
+			return source;
 		}
 	}
 	
@@ -197,7 +217,14 @@ public class TritonLocalConsole {
 								accept.close();
 							}
 							else {
-								start(new ConsoleSocketSource(accept, charset));
+								ConsoleSocketSource source = new ConsoleSocketSource(accept, charset);
+								// if we want client auth and don't get one, we don't even start this up
+								if (!clientAuth || source.getCertificate() != null) {
+									start(source);
+								}
+								else {
+									accept.close();
+								}
 							}
 						}
 					}
@@ -325,7 +352,21 @@ public class TritonLocalConsole {
 					instance = new TritonConsoleInstance(source, runtime);
 					logger.info("Triton console #" + instance.getId() + " connected");
 					instances.add(instance);
+					
+					// if you used a client certificate to gain access, we already established your identity
+					// if we still require password auth, we don't use the certificate as a means to authenticate you
+					if (!passwordAuth && source instanceof ConsoleSocketSource) {
+						X509Certificate certificate = ((ConsoleSocketSource) source).getCertificate();
+						if (certificate != null) {
+							String alias = getAlias(certificate);
+							if (alias != null) {
+								instance.setToken(new BasicPrincipalImpl(alias, null));
+							}
+						}
+					}
+					
 					runtime.registerInThread();
+					
 					// TODO: token?
 					StringBuilder buffered = new StringBuilder();
 					StringBuilder script = new StringBuilder();
@@ -347,6 +388,8 @@ public class TritonLocalConsole {
 								continue;
 							}
 							else if (trimmed.startsWith("#")) {
+								// want comments to appear in resulting script
+								script.append(line + "\n");
 								continue;
 							}
 							// if without trimming, you still typed quit (so no whitespace etc), we stop
