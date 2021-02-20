@@ -19,7 +19,7 @@ public class Triton {
 		
 		TritonGlueEngine glue = new TritonGlueEngine(this, scriptDirectory);
 		glue.setSandboxed(sandboxed);
-		console = new TritonLocalConsole(5000, 5100, glue, 10);
+		console = new TritonLocalConsole(5000, 5123, glue, 10);
 		
 		console.start();
 	}
