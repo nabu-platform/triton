@@ -19,7 +19,7 @@ public class Triton {
 		
 		TritonGlueEngine glue = new TritonGlueEngine(this, scriptDirectory);
 		glue.setSandboxed(sandboxed);
-		console = new TritonLocalConsole(5000, glue, 10);
+		console = new TritonLocalConsole(5000, 5100, glue, 10);
 		
 		console.start();
 	}
@@ -34,6 +34,14 @@ public class Triton {
 
 	public void setSandboxed(boolean sandboxed) {
 		this.sandboxed = sandboxed;
+	}
+	
+	public static File getFolder() {
+		File tritonFolder = new File(System.getProperty("user.home"), ".triton");
+		if (!tritonFolder.exists()) {
+			tritonFolder.mkdirs();
+		}
+		return tritonFolder;
 	}
 	
 }
