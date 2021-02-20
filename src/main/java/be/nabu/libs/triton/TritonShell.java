@@ -22,11 +22,17 @@ public class TritonShell {
 	
 	public static String VERSION = "0.1-beta";
 	
-	private static String readAnswer(BufferedReader reader, String ending) throws IOException {
+	private static String readAnswer(BufferedReader reader, String ending, String inputEnding) throws IOException {
 		String line;
 		StringBuilder builder = new StringBuilder();
 		while ((line = reader.readLine()) != null) {
+			// the output ending is on a separate line
 			if (line.equals(ending)) {
+				break;
+			}
+			// the inputending is NOT on a separate line
+			else if (inputEnding != null && line.endsWith(inputEnding)) {
+				builder.append(line.substring(0, line.length() - inputEnding.length()));
 				break;
 			}
 			else {
@@ -80,27 +86,33 @@ public class TritonShell {
 				BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), "UTF-8"));
 				
 				String ending = "//the--end//";
+				String inputEnding = "//request--input//";
 				// we set a requested ending to each response so we can target that in our parsing
 				// we do this as the first step so we can parse the next steps correctly
 				writer.write("Negotiate-Response-End: " + ending + "\n");
 				writer.flush();
 				// an answer will always come
-				readAnswer(reader, ending);
+				readAnswer(reader, ending, inputEnding);
 				writer.write("version\n");
 				writer.flush();
-				String version = readAnswer(reader, ending);
+				String version = readAnswer(reader, ending, inputEnding);
+				
+				writer.write("Negotiate-Input-End: " + inputEnding + "\n");
+				writer.flush();
+				// an answer will always come
+				readAnswer(reader, ending, inputEnding);
 				
 				terminal.puts(Capability.clear_screen);
                 terminal.flush();
                 terminal.writer().println("_______________________________________________________________\n");
-				terminal.writer().println("** Triton Shell v" + VERSION + " connected to Triton Agent v" + version.trim());
+				terminal.writer().println("* Triton Shell v" + VERSION + " connected to Triton Agent v" + version.trim());
 				terminal.writer().println("_______________________________________________________________\n");
-				terminal.writer().println("quit			disconnect from the triton agent (ctrl+c)");
-				terminal.writer().println("clear			clear the state");
+				terminal.writer().println("- quit			Disconnect from the triton agent (ctrl+c)");
+				terminal.writer().println("- clear			Clear the state");
 				// you can also end a regular line with a backslash for the same effect!
-				terminal.writer().println("alt+enter		create a multiline script");
-				terminal.writer().println("show			show the script so far");
-				terminal.writer().println("state			print the current variable state");
+				terminal.writer().println("- alt+enter		Create a multiline script");
+				terminal.writer().println("- show			Show the script so far");
+				terminal.writer().println("- state			Print the current variable state");
 				terminal.writer().println("_______________________________________________________________\n");
 				
 				// we unset the escape characters so we can send them to the backend, otherwise they get stripped
@@ -128,7 +140,7 @@ public class TritonShell {
 				// by using a space as a prompt, it seems to work with the prompt provided by the server
 				// it doesn't seem to work (unfortunately) with an empty string
 				// the space does tend to remain in unwanted places if content comes back from the server though...
-				// we could get rid of the space but then we need a proper prompt here, which will interfere with the prompt via telnet so we would have to crippled the straight-to-telnet shizzle
+				// we could get rid of the space but then we need a proper prompt here, which will interfere with the prompt via telnet so we would have to cripple the straight-to-telnet shizzle
 				while ((line = consoleReader.readLine("$ ")) != null) {
 					if (line.equals("clear")) {
                         terminal.puts(Capability.clear_screen);
@@ -140,10 +152,22 @@ public class TritonShell {
 						// if we are not at the end yet, add the \ to signal that more is coming
 						writer.write(split[i] + (i == split.length - 1 ? "" : "\\") + "\n");
 						writer.flush();
-						String readAnswer = readAnswer(reader, ending);
-						if (!readAnswer.isEmpty()) {
-							terminal.writer().write(readAnswer);
-							terminal.writer().flush();
+						
+						String responseLine;
+						while ((responseLine = reader.readLine()) != null) {
+							// we done here!
+							if (responseLine.equals(ending)) {
+								break;
+							}
+							else if (responseLine.endsWith(inputEnding)) {
+								String content = consoleReader.readLine(responseLine.substring(0, responseLine.length() - inputEnding.length()));
+								writer.write(content + "\n");
+								writer.flush();
+							}
+							else {
+								terminal.writer().write(responseLine + "\n");
+								terminal.writer().flush();
+							}
 						}
 					}
 				}

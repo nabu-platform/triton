@@ -7,6 +7,7 @@ import be.nabu.libs.resources.file.FileDirectory;
 public class Triton {
 	
 	private TritonLocalConsole console;
+	private boolean sandboxed;
 
 	public void start() {
 		File target = new File(System.getProperty("user.home"), "scripts");
@@ -17,6 +18,7 @@ public class Triton {
 		FileDirectory scriptDirectory = new FileDirectory(null, target, false);
 		
 		TritonGlueEngine glue = new TritonGlueEngine(this, scriptDirectory);
+		glue.setSandboxed(sandboxed);
 		console = new TritonLocalConsole(5000, glue, 10);
 		
 		console.start();
@@ -24,6 +26,14 @@ public class Triton {
 
 	public TritonLocalConsole getConsole() {
 		return console;
+	}
+
+	public boolean isSandboxed() {
+		return sandboxed;
+	}
+
+	public void setSandboxed(boolean sandboxed) {
+		this.sandboxed = sandboxed;
 	}
 	
 }

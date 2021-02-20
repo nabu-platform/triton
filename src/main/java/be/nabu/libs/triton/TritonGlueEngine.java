@@ -15,6 +15,7 @@ import be.nabu.libs.triton.impl.TritonMethods;
 public class TritonGlueEngine {
 	private Charset charset = Charset.forName("UTF-8");
 	private ScannableScriptRepository repository;
+	private boolean sandboxed;
 	
 	public TritonGlueEngine(Triton triton, ResourceContainer<?> scripts) {
 		try {
@@ -34,6 +35,9 @@ public class TritonGlueEngine {
 					return providers;
 				}
 			};
+			if (sandboxed) {
+				parserProvider.setSandboxed(sandboxed);
+			}
 			repository = new ScannableScriptRepository(null, scripts, parserProvider, charset, true);
 		}
 		catch (IOException e) {
@@ -52,6 +56,14 @@ public class TritonGlueEngine {
 
 	public ScriptRepository getRepository() {
 		return repository;
+	}
+
+	public boolean isSandboxed() {
+		return sandboxed;
+	}
+
+	public void setSandboxed(boolean sandboxed) {
+		this.sandboxed = sandboxed;
 	}
 	
 }
