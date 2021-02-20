@@ -32,6 +32,7 @@ import java.util.concurrent.ThreadFactory;
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLServerSocket;
+import javax.net.ssl.SSLSocket;
 import javax.net.ssl.X509KeyManager;
 import javax.security.auth.x500.X500Principal;
 
@@ -189,7 +190,7 @@ public class TritonLocalConsole {
 						sslSocket = (SSLServerSocket) getContext("triton-server").getServerSocketFactory().createServerSocket(securePort);
 						sslSocket.setNeedClientAuth(clientAuth);
 						while (running && !sslSocket.isClosed()) {
-							Socket accept = sslSocket.accept();
+							SSLSocket accept = (SSLSocket) sslSocket.accept();
 							// because we don't require authentication, it _must_ come from a local address to ensure you have access
 							// in the future we can expand upon this with some authentication scheme
 							if (!clientAuth && !isLocal(accept.getInetAddress())) {
@@ -245,6 +246,22 @@ public class TritonLocalConsole {
 			logger.error("Could not get ssl context", e);
 			throw new RuntimeException(e);
 		}
+	}
+	
+	public static String getAlias(X509Certificate certificate) {
+		if (certificate != null) {
+			try {
+				for (Map.Entry<String, X509Certificate> entry : TritonLocalConsole.getKeystore().getCertificates().entrySet()) {
+					if (entry.getValue().equals(certificate)) {
+						return entry.getKey().replaceFirst("^user-", "");
+					}
+				}
+			}
+			catch (Exception e) {
+				throw new RuntimeException(e);
+			}
+		}
+		return null;
 	}
 	
 	public static KeyStoreHandler getKeystore() {

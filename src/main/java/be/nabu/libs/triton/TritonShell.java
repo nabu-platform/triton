@@ -56,9 +56,8 @@ public class TritonShell {
 	public static void main(String...args) throws URISyntaxException {
 		// the connection string
 		// e.g. ts://localhost:5000, the protocol stands for "triton shell" or "triton socket"
-		// secure is sts://localhost:5100: secure triton shell
-//		URI url = new URI(Main.getArgument("url", "ts://localhost:5000", args));
-		URI url = new URI(Main.getArgument("url", "sts://localhost:5100", args));
+		// secure is for example sts://localhost:5100 -> sts: secure triton shell
+		URI url = new URI(Main.getArgument("url", "ts://localhost:5000", args));
 		try {
 			Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
 				@Override

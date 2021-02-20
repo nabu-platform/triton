@@ -112,10 +112,16 @@ public class TritonMethods {
 	
 	public void allow(String alias, String cert) throws KeyStoreException, CertificateException, UnsupportedEncodingException {
 		KeyStoreHandler keystore = TritonLocalConsole.getKeystore();
-		keystore.set("user-" + alias, SecurityUtils.parseCertificate(new ByteArrayInputStream(cert.getBytes("ASCII"))));
-		TritonLocalConsole.save(keystore);
-		// restart thread so the new cert is valid
-		triton.getConsole().restartSecureThread();
+		X509Certificate parseCertificate = SecurityUtils.parseCertificate(new ByteArrayInputStream(cert.getBytes("ASCII")));
+		if (!keystore.getCertificates().values().contains(parseCertificate)) {
+			keystore.set("user-" + alias, parseCertificate);
+			TritonLocalConsole.save(keystore);
+			// restart thread so the new cert is valid
+			triton.getConsole().restartSecureThread();
+		}
+		else {
+			System.out.println("Already trusted");
+		}
 	}
 	
 	public void disallow(String alias) throws KeyStoreException {

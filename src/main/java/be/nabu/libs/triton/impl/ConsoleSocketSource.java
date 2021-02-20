@@ -6,8 +6,15 @@ import java.io.OutputStreamWriter;
 import java.io.Reader;
 import java.io.Writer;
 import java.net.Socket;
+import java.net.SocketAddress;
 import java.nio.charset.Charset;
+import java.security.cert.Certificate;
+import java.security.cert.X509Certificate;
+import java.util.Map;
 
+import javax.net.ssl.SSLSocket;
+
+import be.nabu.libs.triton.TritonLocalConsole;
 import be.nabu.libs.triton.api.ConsoleSource;
 
 public class ConsoleSocketSource implements ConsoleSource {
@@ -46,7 +53,26 @@ public class ConsoleSocketSource implements ConsoleSource {
 	
 	@Override
 	public String toString() {
-		return "socket[" + socket.getRemoteSocketAddress() + "]";
+		X509Certificate certificate = getCertificate();
+		return "socket[" + (certificate == null ? "" : TritonLocalConsole.getAlias(certificate) + "@") + socket.getRemoteSocketAddress() + "]";
+	}
+	
+	public SocketAddress getRemote() {
+		return socket.getRemoteSocketAddress();
 	}
 
+	public X509Certificate getCertificate() {
+		try {
+			if (socket instanceof SSLSocket) {
+				Certificate[] peerCertificates = ((SSLSocket) socket).getSession().getPeerCertificates();
+				if (peerCertificates.length > 0 && peerCertificates[0] instanceof X509Certificate) {
+					return (X509Certificate) peerCertificates[0];
+				}
+			}
+		}
+		catch (Exception e) {
+			// ignore
+		}
+		return null;
+	}
 }
