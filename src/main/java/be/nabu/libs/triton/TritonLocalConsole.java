@@ -126,7 +126,7 @@ public class TritonLocalConsole {
 	
 	private void start(ConsoleSource source) {
 		threadPool.submit(new Runnable() {
-			private String responseEnd, inputEnd;
+			private String responseEnd, inputEnd, passwordEnd;
 
 			@Override
 			public void run() {
@@ -157,6 +157,7 @@ public class TritonLocalConsole {
 					
 					responseEnd = "";
 					inputEnd = "";
+					passwordEnd = "";
 					String line;
 					while ((line = reader.readLine()) != null) {
 						if (runtime.isAborted()) {
@@ -196,6 +197,9 @@ public class TritonLocalConsole {
 							else if (line.startsWith("Negotiate-Input-End:")) {
 								inputEnd = line.substring("Negotiate-Input-End:".length()).trim();
 							}
+							else if (line.startsWith("Negotiate-Password-End:")) {
+								passwordEnd = line.substring("Negotiate-Password-End:".length()).trim();
+							}
 							else if (line.equals("refresh")) {
 								engine.refresh();
 							}
@@ -215,7 +219,12 @@ public class TritonLocalConsole {
 									public String input(String message, boolean secret) throws IOException {
 										if (message != null) {
 											writer.write(message);
-											if (!inputEnd.isEmpty()) {
+											// if we have a specific marker for password input, use that
+											if (secret && !passwordEnd.isEmpty()) {
+												writer.write(passwordEnd + "\n");
+											}
+											// if we don't have a password marker but a generic input marker, use that
+											else if (!inputEnd.isEmpty()) {
 												writer.write(inputEnd + "\n");
 											}
 											// if we don't have a specific marker for input end, we use the response end marker

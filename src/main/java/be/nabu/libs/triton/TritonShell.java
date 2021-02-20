@@ -22,17 +22,12 @@ public class TritonShell {
 	
 	public static String VERSION = "0.1-beta";
 	
-	private static String readAnswer(BufferedReader reader, String ending, String inputEnding) throws IOException {
+	private static String readAnswer(BufferedReader reader, String ending) throws IOException {
 		String line;
 		StringBuilder builder = new StringBuilder();
 		while ((line = reader.readLine()) != null) {
 			// the output ending is on a separate line
 			if (line.equals(ending)) {
-				break;
-			}
-			// the inputending is NOT on a separate line
-			else if (inputEnding != null && line.endsWith(inputEnding)) {
-				builder.append(line.substring(0, line.length() - inputEnding.length()));
 				break;
 			}
 			else {
@@ -87,20 +82,26 @@ public class TritonShell {
 				
 				String ending = "//the--end//";
 				String inputEnding = "//request--input//";
+				String passwordEnding = "//request--password//";
 				// we set a requested ending to each response so we can target that in our parsing
 				// we do this as the first step so we can parse the next steps correctly
 				writer.write("Negotiate-Response-End: " + ending + "\n");
 				writer.flush();
 				// an answer will always come
-				readAnswer(reader, ending, inputEnding);
+				readAnswer(reader, ending);
 				writer.write("version\n");
 				writer.flush();
-				String version = readAnswer(reader, ending, inputEnding);
+				String version = readAnswer(reader, ending);
 				
 				writer.write("Negotiate-Input-End: " + inputEnding + "\n");
 				writer.flush();
 				// an answer will always come
-				readAnswer(reader, ending, inputEnding);
+				readAnswer(reader, ending);
+				
+				writer.write("Negotiate-Password-End: " + passwordEnding + "\n");
+				writer.flush();
+				// an answer will always come
+				readAnswer(reader, ending);
 				
 				terminal.puts(Capability.clear_screen);
                 terminal.flush();
@@ -161,6 +162,11 @@ public class TritonShell {
 							}
 							else if (responseLine.endsWith(inputEnding)) {
 								String content = consoleReader.readLine(responseLine.substring(0, responseLine.length() - inputEnding.length()));
+								writer.write(content + "\n");
+								writer.flush();
+							}
+							else if (responseLine.endsWith(passwordEnding)) {
+								String content = consoleReader.readLine(responseLine.substring(0, responseLine.length() - passwordEnding.length()), '*');
 								writer.write(content + "\n");
 								writer.flush();
 							}
