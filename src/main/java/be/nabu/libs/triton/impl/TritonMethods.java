@@ -110,11 +110,11 @@ public class TritonMethods {
 		return aliases;
 	}
 	
-	public void allow(String alias, String cert) throws KeyStoreException, CertificateException, UnsupportedEncodingException {
+	public void allow(String cert) throws KeyStoreException, CertificateException, UnsupportedEncodingException {
 		KeyStoreHandler keystore = TritonLocalConsole.getKeystore();
 		X509Certificate parseCertificate = SecurityUtils.parseCertificate(new ByteArrayInputStream(cert.getBytes("ASCII")));
 		if (!keystore.getCertificates().values().contains(parseCertificate)) {
-			keystore.set("user-" + alias, parseCertificate);
+			keystore.set("user-" + TritonLocalConsole.getAlias(parseCertificate), parseCertificate);
 			TritonLocalConsole.save(keystore);
 			// restart thread so the new cert is valid
 			triton.getConsole().restartSecureThread();

@@ -15,12 +15,13 @@ import java.net.InetAddress;
 import java.net.NetworkInterface;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.net.SocketAddress;
 import java.net.SocketException;
+import java.net.UnknownHostException;
 import java.nio.charset.Charset;
 import java.security.KeyPair;
 import java.security.PrivateKey;
 import java.security.SecureRandom;
+import java.security.UnrecoverableKeyException;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Date;
@@ -43,12 +44,11 @@ import org.slf4j.LoggerFactory;
 import be.nabu.glue.api.InputProvider;
 import be.nabu.glue.core.impl.executors.EvaluateExecutor;
 import be.nabu.glue.impl.SimpleExecutionEnvironment;
+import be.nabu.glue.impl.StandardInputProvider;
 import be.nabu.glue.impl.formatters.SimpleOutputFormatter;
 import be.nabu.glue.utils.DynamicScript;
 import be.nabu.glue.utils.ScriptRuntime;
 import be.nabu.glue.utils.VirtualScript;
-import be.nabu.libs.authentication.api.Authenticator;
-import be.nabu.libs.authentication.api.RoleHandler;
 import be.nabu.libs.authentication.api.Token;
 import be.nabu.libs.authentication.impl.BasicPrincipalImpl;
 import be.nabu.libs.triton.api.ConsoleSource;
@@ -63,9 +63,6 @@ import be.nabu.utils.security.StoreType;
 
 public class TritonLocalConsole {
 
-	private Authenticator authenticator;
-	private RoleHandler roleHandler;
-	
 	private static Logger logger = LoggerFactory.getLogger(TritonLocalConsole.class);
 	private TritonGlueEngine engine;
 	private Integer unsecurePort, securePort;
@@ -74,10 +71,7 @@ public class TritonLocalConsole {
 	private int maxConcurrentConsoles;
 	private ExecutorService threadPool;
 	private long consoleInstanceId;
-	// if we turn this on, we require a verified certificate to be installed on the triton installation
 	private boolean clientAuth = true;
-	// whether you need additional password authentication
-	private boolean passwordAuth = false;
 	
 	private SSLServerSocket sslSocket;
 	
@@ -207,7 +201,7 @@ public class TritonLocalConsole {
 				@Override
 				public void run() {
 					try {
-						sslSocket = (SSLServerSocket) getContext("triton-server").getServerSocketFactory().createServerSocket(securePort);
+						sslSocket = (SSLServerSocket) getContext().getServerSocketFactory().createServerSocket(securePort);
 						sslSocket.setNeedClientAuth(clientAuth);
 						while (running && !sslSocket.isClosed()) {
 							SSLSocket accept = (SSLSocket) sslSocket.accept();
@@ -247,27 +241,93 @@ public class TritonLocalConsole {
 		}
 	}
 	
-	public static SSLContext getContext(String alias) {
+	public static String getProfile() {
+		return System.getProperty("triton.profile", "triton-" + (Main.SERVER_MODE ? "server" : "client"));
+	}
+	
+	public static String getName() {
+		try {
+			return System.getProperty("triton.name", InetAddress.getLocalHost().getHostName());
+		}
+		catch (UnknownHostException e) {
+			return "anonymous";
+		}
+	}
+	
+	public static String getOrganisation() {
+		return System.getProperty("triton.organisation", "Celerium");
+	}
+	
+	public static String getOrganisationalUnit() {
+		return System.getProperty("triton.organisationalUnit", "Nabu");
+	}
+	
+	public static String getLocality() {
+		return System.getProperty("triton.locality", "Antwerp");
+	}
+	
+	public static String getState() {
+		return System.getProperty("triton.state", "Antwerp");
+	}
+	
+	public static String getCountry() {
+		return System.getProperty("triton.country", "Belgium");
+	}
+	
+	private static String rememberedKeyPassword;
+	
+	public static String getKeyPassword(String defaultPassword) {
+		// don't want to keep this in system properties, it could be "stolen" then
+		String key = rememberedKeyPassword;
+		if (key == null) {
+			key = System.getProperty("triton.keyPassword", defaultPassword);
+		}
+		if (key == null) {
+			try {
+				key = new StandardInputProvider().input("Enter key password: ", true);
+				rememberedKeyPassword = key;
+			}
+			catch (IOException e) {
+				throw new RuntimeException("Can not recover key password", e);
+			}
+		}
+		return key;
+	}
+	
+	public static String getKeystorePassword() {
+		return System.getProperty("triton.storePassword", "triton-keystore");
+	}
+	
+	public static SSLContext getContext() {
+		String profile = getProfile();
+		// in server mode, we don't force a password
+		String defaultKeyPassword = Main.SERVER_MODE ? "triton-password" : null;
+		String keyPassword = getKeyPassword(defaultKeyPassword);
 		try {
 			KeyStoreHandler keystore = getKeystore();
-			PrivateKey privateKey = keystore.getPrivateKey(alias, "triton");
+			PrivateKey privateKey = keystore.getPrivateKey(profile, keyPassword);
 			// if we don't have a key yet, generate a self signed set
 			if (privateKey == null) {
 				KeyPair pair = SecurityUtils.generateKeyPair(KeyPairType.RSA, 4096);
-				X500Principal principal = SecurityUtils.createX500Principal("triton", "celerium", "nabu", "antwerp", "antwerp", "belgium");
+				X500Principal principal = SecurityUtils.createX500Principal(getName(), getOrganisation(), getOrganisationalUnit(), getLocality(), getState(), getCountry());
 				X509Certificate certificate = BCSecurityUtils.generateSelfSignedCertificate(pair, new Date(new Date().getTime() + (1000l * 60 * 60 * 24 * 365 * 100)), principal, principal);
-				keystore.set(alias, pair.getPrivate(), new X509Certificate[] { certificate }, "triton");
+				keystore.set(profile, pair.getPrivate(), new X509Certificate[] { certificate }, keyPassword);
 				save(keystore);
 			}
-			KeyManager[] keyManagers = keystore.getKeyManagers("triton");
+			KeyManager[] keyManagers = keystore.getKeyManagers(keyPassword);
 			for (int i = 0; i < keyManagers.length; i++) {
 				if (keyManagers[i] instanceof X509KeyManager) {
-					keyManagers[i] = new AliasKeyManager((X509KeyManager) keyManagers[i], alias);
+					keyManagers[i] = new AliasKeyManager((X509KeyManager) keyManagers[i], profile);
 				}
 			}
 			SSLContext context = SSLContext.getInstance(SSLContextType.TLS.toString());
 			context.init(keyManagers, keystore.getTrustManagers(), new SecureRandom());
 			return context;
+		}
+		catch (UnrecoverableKeyException e) {
+			System.out.println("Could not unlock the key, did you provide the correct password?");
+			System.exit(0);
+			throw new RuntimeException(e);
 		}
 		catch (Exception e) {
 			logger.error("Could not get ssl context", e);
@@ -275,12 +335,12 @@ public class TritonLocalConsole {
 		}
 	}
 	
-	public static String getAlias(X509Certificate certificate) {
+	public static String getValidatedAlias(X509Certificate certificate) {
 		if (certificate != null) {
 			try {
 				for (Map.Entry<String, X509Certificate> entry : TritonLocalConsole.getKeystore().getCertificates().entrySet()) {
 					if (entry.getValue().equals(certificate)) {
-						return entry.getKey().replaceFirst("^user-", "");
+						return getAlias(entry.getValue());
 					}
 				}
 			}
@@ -289,6 +349,11 @@ public class TritonLocalConsole {
 			}
 		}
 		return null;
+	}
+
+	public static String getAlias(X509Certificate certificate) {
+		Map<String, String> parts = SecurityUtils.getParts(certificate.getSubjectX500Principal());
+		return parts.get("CN");
 	}
 	
 	public static KeyStoreHandler getKeystore() {
@@ -323,10 +388,6 @@ public class TritonLocalConsole {
 			throw new RuntimeException(e);
 		}
 	}
-
-	private static String getKeystorePassword() {
-		return System.getProperty("triton-keystore-password", "triton-keystore");
-	}
 	
 	private void start(ConsoleSource source) {
 		threadPool.submit(new Runnable() {
@@ -355,13 +416,17 @@ public class TritonLocalConsole {
 					
 					// if you used a client certificate to gain access, we already established your identity
 					// if we still require password auth, we don't use the certificate as a means to authenticate you
-					if (!passwordAuth && source instanceof ConsoleSocketSource) {
+					if (source instanceof ConsoleSocketSource) {
 						X509Certificate certificate = ((ConsoleSocketSource) source).getCertificate();
 						if (certificate != null) {
-							String alias = getAlias(certificate);
+							String alias = getValidatedAlias(certificate);
 							if (alias != null) {
 								instance.setToken(new BasicPrincipalImpl(alias, null));
 							}
+						}
+						// if you are local, you get admin powers 
+						else if (isLocal(((ConsoleSocketSource) source).getSocket().getInetAddress())) {
+							instance.setToken(new BasicPrincipalImpl("admin", null));
 						}
 					}
 					

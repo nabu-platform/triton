@@ -53,7 +53,7 @@ public class ConsoleSocketSource implements ConsoleSource {
 	@Override
 	public String toString() {
 		X509Certificate certificate = getCertificate();
-		return "socket[" + (certificate == null ? "" : TritonLocalConsole.getAlias(certificate) + "@") + socket.getRemoteSocketAddress() + "]";
+		return "socket[" + (certificate == null ? "" : TritonLocalConsole.getValidatedAlias(certificate) + "@") + socket.getRemoteSocketAddress() + "]";
 	}
 	
 	public SocketAddress getRemote() {

@@ -7,7 +7,6 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.StringWriter;
-import java.net.InetAddress;
 import java.net.Socket;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -66,14 +65,12 @@ public class TritonShell {
 				}
 			}));
 			
-			String alias = InetAddress.getLocalHost().getHostName();
-			
-			// always generate the ssl context so we have the key
-			SSLContext context = TritonLocalConsole.getContext(alias);
-			
 			Socket socket;
 			// we are doing secure stuff
 			if ("sts".equals(url.getScheme())) {
+				// always generate the ssl context so we have the key
+				// we might need the key to install it
+				SSLContext context = TritonLocalConsole.getContext();
 				// make sure we already trust the target server
 				String host = url.getHost() == null ? "localhost" : url.getHost();
 				int port = url.getPort() < 0 ? 5100 : url.getPort();
@@ -82,7 +79,7 @@ public class TritonShell {
 				Map<String, X509Certificate> certificates = keystore.getCertificates();
 				if (!certificates.values().contains(chain[0])) {
 					StandardInputProvider inputProvider = new StandardInputProvider();
-					String result = inputProvider.input("Connecting to unknown server '" + host + "', do you trust this server? [Y/n]: ", false);
+					String result = inputProvider.input("Connecting to unknown server '" + TritonLocalConsole.getAlias(chain[0]) + "' (" + host + "), do you trust this server? [Y/n]: ", false);
 					if (result != null && result.equalsIgnoreCase("n")) {
 						System.exit(0);
 					}
@@ -95,7 +92,7 @@ public class TritonShell {
 					keystore.set(keyAttempt, chain[0]);
 					TritonLocalConsole.save(keystore);
 					// renew context with the cert installed
-					context = TritonLocalConsole.getContext(alias);
+					context = TritonLocalConsole.getContext();
 				}
 				socket = context.getSocketFactory().createSocket(host, port);
 			}
@@ -201,7 +198,7 @@ public class TritonShell {
 				// we could get rid of the space but then we need a proper prompt here, which will interfere with the prompt via telnet so we would have to cripple the straight-to-telnet shizzle
 				while ((line = consoleReader.readLine("$ ")) != null) {
 					if (line.equals("self")) {
-						X509Certificate certificate = TritonLocalConsole.getKeystore().getCertificate(alias);
+						X509Certificate certificate = TritonLocalConsole.getKeystore().getCertificate(TritonLocalConsole.getProfile());
 						StringWriter certWriter = new StringWriter();
 						SecurityUtils.encodeCertificate(certificate, certWriter);
 						certWriter.flush();
@@ -211,11 +208,13 @@ public class TritonShell {
 					}
 					// install the cert
 					if (line.equals("allow")) {
-						X509Certificate certificate = TritonLocalConsole.getKeystore().getCertificate(alias);
+						// force generation of the key (not clean!)
+						TritonLocalConsole.getContext();
+						X509Certificate certificate = TritonLocalConsole.getKeystore().getCertificate(TritonLocalConsole.getProfile());
 						StringWriter certWriter = new StringWriter();
 						SecurityUtils.encodeCertificate(certificate, certWriter);
 						certWriter.flush();
-						line = "allow(\"" + alias + "\", \"" + certWriter.toString().replaceAll("[\r\n]+", "\n\t") + "\")";
+						line = "allow(\"" + certWriter.toString().replaceAll("[\r\n]+", "\n\t") + "\")";
 					}
 					if (line.equals("clear")) {
                         terminal.puts(Capability.clear_screen);
