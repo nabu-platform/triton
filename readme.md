@@ -9,28 +9,36 @@ This can be managed locally or remotely.
 
 ## Local Connection
 
-A listener is added to port 5000 which allows for direct access through either the console or telnet. This connection is not secured and only connections made from local addresses are accepted. 
+A listener is added to port 5122 (triton.local.port=5122) which allows for direct access through either the console or telnet. This connection is not secured and only connections made from local addresses are accepted. 
 
 Whoever connects to this port is considered to be an admin as they have access to the machine itself. It is advised to use SSH or something to access Triton over this port.
 
-Example of a connection url for the console: ``ts://localhost:5000``
+Example of a connection url for the console: ``ts://localhost:5122``
 Example of a telnet connection:
 
 ```
-$ telnet localhost 5000
+$ telnet localhost 5122
 ```
 
-You can disable the local port by setting the parameter ``triton.local.admin=false`` when starting triton.
+You can disable the local port by setting the parameter ``triton.local.enabled=false`` when starting triton.
 
 The local connection can be used to do initial setup of the machine and/or as the only point of access if layered over something like SSH.
+
+By default the triton console will try to connect to ``ts://localhost`` which is the unsecure connection.
+You can connect to a different host using the parameter ``triton.host`` or simply ``host``.
+
+Note that if you fill in a host without specifying the scheme, triton will assume you want sts seeing as ts is only available to localhost.
 
 ## SSL
 
 Note that certificates are used for both server and client authentication. The CN field is considered to be the identity while the certificate itself is the authentication.
 
+Example of a connection url for the console: ``sts://localhost``.
+You may be able to still connect to the secure endpoint using for example the openssl toolset but because client certificates are mandatory this might be slightly harder to set up.
+
 ### Server side
 
-On port 5123 triton will start an SSL-secured equivalent of the other port, meaning that, once connected it behaves exactly the same but it is secured by SSL.
+On port 5123 (triton.secure.port=5123) triton will start an SSL-secured equivalent of the other port, meaning that, once connected it behaves exactly the same but it is secured by SSL.
 
 Unless centrally managed, every Triton server will generate a self signed certificate which will be used as its identity.
 When users connect to this machine for the first time, they will be asked if they want to accept the certificate.
@@ -76,6 +84,21 @@ When a new certificate is added, the 5123 port will go offline temporarily and b
 
 To add to the "something you have" (the certs), you can also add "something you know".
 This is not enforced by the Triton server, instead it is the password that is used to securely store your certificate, meaning it is entirely handled by the client.
+
+# Folder Layout
+
+Triton needs a number of folders to operate, if you configure nothing, the defaults will be used.
+The defaults are the triton client are located in a hidden folder ``.triton-client`` which resides in your home folder whereas the default for the server is ``.triton-server``.
+
+## Configuration
+
+Triton needs a configuration folder where it stores things like the keystore.
+This can be configured using ``triton.folder.config`` and defaults to the root of the hidden folder.
+
+## Scripts
+
+Triton needs a folder to store and use glue scripts. This can be configured by setting ``triton.folder.scripts``.
+It defaults to a subfolder "scripts" of the hidden folder.
 
 # Name
 

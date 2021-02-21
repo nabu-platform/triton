@@ -53,10 +53,11 @@ public class TritonShell {
 	}
 	
 	public static void main(String...args) throws URISyntaxException {
+		Main.systemPropertify(args);
 		// the connection string
 		// e.g. ts://localhost:5000, the protocol stands for "triton shell" or "triton socket"
 		// secure is for example sts://localhost:5100 -> sts: secure triton shell
-		URI url = new URI(Main.getArgument("url", "ts://localhost:5000", args));
+		URI url = new URI(System.getProperty("triton.host", System.getProperty("host", "ts://localhost")));
 		try {
 			Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
 				@Override
@@ -65,15 +66,18 @@ public class TritonShell {
 				}
 			}));
 			
+			int plainPort = Integer.parseInt(System.getProperty("triton.local.port", "" + Triton.DEFAULT_PLAIN_PORT));
+			int securePort = Integer.parseInt(System.getProperty("triton.secure.port", "" + Triton.DEFAULT_SECURE_PORT));
+			
 			Socket socket;
-			// we are doing secure stuff
-			if ("sts".equals(url.getScheme())) {
+			// by default we assume you want secure
+			if (url.getScheme() == null || "sts".equals(url.getScheme())) {
 				// always generate the ssl context so we have the key
 				// we might need the key to install it
 				SSLContext context = TritonLocalConsole.getContext();
 				// make sure we already trust the target server
 				String host = url.getHost() == null ? "localhost" : url.getHost();
-				int port = url.getPort() < 0 ? 5100 : url.getPort();
+				int port = url.getPort() < 0 ? securePort : url.getPort();
 				X509Certificate[] chain = SecurityUtils.getChain(host, port, SSLContextType.TLS);
 				KeyStoreHandler keystore = TritonLocalConsole.getKeystore();
 				Map<String, X509Certificate> certificates = keystore.getCertificates();
@@ -96,8 +100,8 @@ public class TritonShell {
 				}
 				socket = context.getSocketFactory().createSocket(host, port);
 			}
-			else if (url.getScheme() == null || "ts".equals(url.getScheme())) {
-				socket = new Socket(url.getHost() == null ? "localhost" : url.getHost(), url.getPort() < 0 ? 5000 : url.getPort());
+			else if ("ts".equals(url.getScheme())) {
+				socket = new Socket(url.getHost() == null ? "localhost" : url.getHost(), url.getPort() < 0 ? plainPort : url.getPort());
 			}
 			else {
 				throw new RuntimeException("Invalid scheme: " + url);

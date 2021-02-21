@@ -8,11 +8,22 @@ public class Main {
 	public static boolean SERVER_MODE = false;
 	
 	public static void main(String...args) {
+		systemPropertify(args);
 		SERVER_MODE = true;
 		Triton triton = new Triton();
 		boolean sandboxed = Boolean.parseBoolean(getArgument("sandboxed", "false", args));
 		triton.setSandboxed(sandboxed);
 		triton.start();
+	}
+
+	public static void systemPropertify(String... args) {
+		// also put them in the system properties
+		for (String argument : args) {
+			int index = argument.indexOf('=');
+			if (index > 0) {
+				System.setProperty(argument.substring(0, index), argument.substring(index + 1));
+			}
+		}
 	}
 	
 	public static String getArgument(String name, String defaultValue, String...arguments) {

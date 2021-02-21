@@ -8,9 +8,12 @@ public class Triton {
 	
 	private TritonLocalConsole console;
 	private boolean sandboxed;
+	
+	public static int DEFAULT_PLAIN_PORT = 5122;
+	public static int DEFAULT_SECURE_PORT = 5123;
 
 	public void start() {
-		File target = new File(System.getProperty("user.home"), "scripts");
+		File target = getFolder("scripts");
 		System.out.println("Script folder: " + target.getAbsolutePath());
 		if (!target.exists()) {
 			target.mkdirs();
@@ -19,8 +22,11 @@ public class Triton {
 		
 		TritonGlueEngine glue = new TritonGlueEngine(this, scriptDirectory);
 		glue.setSandboxed(sandboxed);
-		console = new TritonLocalConsole(5000, 5123, glue, 10);
 		
+		boolean enableAdmin = Boolean.parseBoolean(System.getProperty("triton.local.enabled", "true"));
+		int plainPort = Integer.parseInt(System.getProperty("triton.local.port", "" + DEFAULT_PLAIN_PORT));
+		int securePort = Integer.parseInt(System.getProperty("triton.secure.port", "" + DEFAULT_SECURE_PORT));
+		console = new TritonLocalConsole(enableAdmin ? plainPort : null, securePort, glue, 10);
 		console.start();
 	}
 
@@ -37,8 +43,17 @@ public class Triton {
 	}
 	
 	public static File getFolder() {
-		String folder = System.getProperty("triton.folder", ".triton-" + (Main.SERVER_MODE ? "server" : "client"));
-		File tritonFolder = new File(System.getProperty("user.home"), folder);
+		return getFolder("config");
+	}
+	
+	public static File getFolder(String name) {
+		// the config can be stored right in the folder
+		// everything else should be in a subfolder
+		String folder = System.getProperty("triton.folder." + name, "~/.triton-" + (Main.SERVER_MODE ? "server" : "client") + ("config".equals(name) ? "" : "/" + name));
+		File tritonFolder = folder.startsWith("~")
+			? new File(System.getProperty("user.home"), folder.replaceFirst("^~[/]*", ""))
+			: new File(folder);
+
 		if (!tritonFolder.exists()) {
 			tritonFolder.mkdirs();
 		}
