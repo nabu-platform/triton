@@ -1,3 +1,22 @@
+# TODO
+
+- we now have package verification, we need to be able to create packages
+	-> do this using triton itself
+	-> create a package from a directory or sign an existing zip file
+	
+- test invalid zips etc, make sure they don't make it through
+
+- when "installing" a package (can be from any url)
+	-> first obviously check if valid, then check if an older version of the module has been installed
+	-> if a newer version is installed, verify with the user that you want to downgrade
+	-> uninstall previous version, for scripts we need to also unload the script repository and re-add it (then refresh)
+-> when uninstalling a zip on the filesystem (which was unzipped)
+	-> delete file by file as based on the previous zip file (rather than removing the entire directory)
+	-> if a directory is empty after files have been removed, remove the directory itself as well
+	
+checked: for non-scripts, do we want to actually unzip so it can be used outside of triton?
+-> e.g. software installation (nabu, application,...)
+
 # Security
 
 Security consists of two parts:
