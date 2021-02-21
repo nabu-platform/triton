@@ -292,7 +292,7 @@ public class TritonLocalConsole {
 		}
 		if (key == null) {
 			try {
-				key = new StandardInputProvider().input("Enter key password: ", true);
+				key = new StandardInputProvider().input("Enter key password: ", true, null);
 				rememberedKeyPassword = key;
 			}
 			catch (IOException e) {
@@ -428,9 +428,14 @@ public class TritonLocalConsole {
 		return console.get();
 	}
 	
+	// TODO: we probably need a way to negotiate non-interaction mode
+	// you want to be able to run unsupervised management scripts
 	private void start(ConsoleSource source) {
 		threadPool.submit(new Runnable() {
 			private String responseEnd, inputEnd, passwordEnd;
+			
+			// whether or not this is an interactive session
+			private boolean interactive = true;
 
 			@Override
 			public void run() {
@@ -445,6 +450,7 @@ public class TritonLocalConsole {
 					DynamicScript dynamicScript = new DynamicScript(
 						engine.getRepository(), 
 						engine.getRepository().getParserProvider().newParser(engine.getRepository(), "dynamic.glue"));
+
 					runtime = new ScriptRuntime(dynamicScript, 
 						environment, 
 						false, 
@@ -482,7 +488,10 @@ public class TritonLocalConsole {
 					// if you ever request input asynchronously, this will...not work well :|
 					InputProvider inputProvider = new InputProvider() {
 						@Override
-						public String input(String message, boolean secret) throws IOException {
+						public String input(String message, boolean secret, String defaultValue) throws IOException {
+							if (!interactive) {
+								return defaultValue;
+							}
 							if (message != null) {
 								writer.write(message);
 								// if we have a specific marker for password input, use that
@@ -547,6 +556,10 @@ public class TritonLocalConsole {
 							}
 							else if (line.startsWith("Negotiate-Response-End:")) {
 								responseEnd = line.substring("Negotiate-Response-End:".length()).trim();
+							}
+							// turn on or off interactive mode
+							else if (line.startsWith("Negotiate-Interactive:")) {
+								interactive = "true".equals(line.substring("Negotiate-Interactive:".length()).trim());
 							}
 							else if (line.startsWith("Negotiate-Input-End:")) {
 								inputEnd = line.substring("Negotiate-Input-End:".length()).trim();

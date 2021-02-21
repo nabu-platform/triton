@@ -17,6 +17,20 @@
 checked: for non-scripts, do we want to actually unzip so it can be used outside of triton?
 -> e.g. software installation (nabu, application,...)
 
+# Interaction
+
+There are two interesting modes that triton (and glue) can operate in:
+
+- interactive
+- unsupervised
+
+Triton allows you to switch between the two modes but it starts by default in interactive mode.
+
+In interactive mode it will prompt the user for an answer when edge cases are detected and we want to make sure the user knows what he's doing.
+In unsupervised mode however, there will be no prompt and instead triton will continue as best as possible on the chosen path.
+
+Note that not everything can be done unsupervised.
+
 # Security
 
 Security consists of two parts:

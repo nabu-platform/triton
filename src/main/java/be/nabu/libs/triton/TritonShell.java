@@ -83,7 +83,7 @@ public class TritonShell {
 				if (!Triton.isTrusted(chain, keystore)) {
 					Map<String, X509Certificate> certificates = keystore.getCertificates();
 					StandardInputProvider inputProvider = new StandardInputProvider();
-					String result = inputProvider.input("Connecting to unknown server '" + TritonLocalConsole.getAlias(chain[0]) + "' (" + host + "), do you trust this server? [Y/n]: ", false);
+					String result = inputProvider.input("Connecting to unknown server '" + TritonLocalConsole.getAlias(chain[0]) + "' (" + host + "), do you trust this server? [Y/n]: ", false, null);
 					if (result != null && result.equalsIgnoreCase("n")) {
 						System.exit(0);
 					}
@@ -172,6 +172,7 @@ public class TritonShell {
 				terminal.writer().println("- state			Print the current variable state");
 				terminal.writer().println("- allow			Add client cert to server to connect securely");
 				terminal.writer().println("- self			Print client cert for installation");
+				terminal.writer().println("- (un)supervised	Toggle between supervised and unsupervised mode");
 				terminal.writer().println("_______________________________________________________________\n");
 				
 				// we unset the escape characters so we can send them to the backend, otherwise they get stripped
@@ -208,6 +209,18 @@ public class TritonShell {
 						certWriter.flush();
 						terminal.writer().println(certWriter.toString());
 						terminal.writer().flush();
+						continue;
+					}
+					if (line.equals("unsupervised")) {
+						writer.write("Negotiate-Interactive: false\n");
+						writer.flush();
+						readAnswer(reader, ending);
+						continue;
+					}
+					if (line.equals("supervised")) {
+						writer.write("Negotiate-Interactive: true\n");
+						writer.flush();
+						readAnswer(reader, ending);
 						continue;
 					}
 					// install the cert

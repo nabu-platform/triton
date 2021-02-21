@@ -334,7 +334,7 @@ public class Triton {
 	}
 	
 	// this assumes it has already been validated
-	public void install(Resource item) {
+	public void install(Resource item, boolean force) {
 		ZIPArchive archive = toArchive(item);
 
 		// we check the author separately, in most cases a failed installation is due to an unknown author
@@ -347,7 +347,7 @@ public class Triton {
 				if (!isTrusted(new X509Certificate[] { author }, packagingKeystore)) {
 					try {
 						// adding an author is a big ask, you have to be sure so we take N by default
-						String result = console.getInputProvider().input("The author '" + TritonLocalConsole.getAlias(author) + "' is not trusted, do you want to add the author to your list of trusted authors? [y/N]: ", false);
+						String result = console.getInputProvider().input("The author '" + TritonLocalConsole.getAlias(author) + "' is not trusted, do you want to add the author to your list of trusted authors? [y/N]: ", false, "y");
 						if (result != null && "y".equalsIgnoreCase(result.trim())) {
 							if (!packagingKeystore.getCertificates().values().contains(author)) {
 								packagingKeystore.set("user-" + TritonLocalConsole.getAlias(author), author);
@@ -373,6 +373,44 @@ public class Triton {
 		if (description == null) {
 			throw new IllegalArgumentException("Archive is not trusted");
 		}
+		
+		// we need to check if there is already another version of this module by that author
+		// we want to force people to think about versions so if the version is the same, we do nothing
+		for (PackageDescription existing : getPackages().keySet()) {
+			if (existing.getCertificate().equals(description.getCertificate()) && existing.getModule().equals(description.getModule())) {
+				// if we don't force it, we ask or not do it
+				if (!force) {
+					// if it's interactive, we can ask the user
+					if (console != null && console.getInputProvider() != null) {
+						try {
+							String input = console.getInputProvider().input("You already have version '" + existing.getVersion() + "' of module '" + description.getModule() + "' installed. Do you want to install version '" + description.getVersion() + "' [y/N]: ", false, "y");
+							if (!input.trim().isEmpty() && "y".equalsIgnoreCase(input.trim())) {
+								// do nothing, the default is uninstall
+							}
+							// we explicitly choose not to do this
+							else {
+								return;
+							}
+						}
+						catch (Exception e) {
+							throw new RuntimeException(e);
+						}
+					}
+					else if (existing.getVersion().equals(description.getVersion())) {
+						System.out.println("This module is already installed");
+						return;
+					}
+					// otherwise we don't install the update
+					else {
+						throw new IllegalStateException("There is already a version of this module present, please remove that before installing the new one");
+					}
+				}
+				// if we get here, we want to uninstall it
+				uninstall(existing);
+				break;
+			}
+		}
+		
 		boolean requireReload = false;
 		for (Resource child : archive) {
 			// we only install full directories

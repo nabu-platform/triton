@@ -25,8 +25,6 @@ import java.util.Properties;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
-import javax.net.ssl.SSLContext;
-
 import be.nabu.glue.core.impl.methods.FileMethods;
 import be.nabu.libs.evaluator.annotations.MethodProviderClass;
 import be.nabu.libs.resources.ResourceUtils;
@@ -35,8 +33,6 @@ import be.nabu.libs.resources.api.Resource;
 import be.nabu.libs.resources.api.ResourceContainer;
 import be.nabu.libs.resources.memory.MemoryDirectory;
 import be.nabu.libs.resources.memory.MemoryItem;
-import be.nabu.libs.resources.memory.MemoryResource;
-import be.nabu.libs.triton.Main;
 import be.nabu.libs.triton.Triton;
 import be.nabu.libs.triton.TritonLocalConsole;
 import be.nabu.libs.triton.TritonLocalConsole.TritonConsoleInstance;
@@ -111,7 +107,7 @@ public class TritonMethods {
 	
 	// Install a package (update the manifest to reflect this)
 	// The version is optional, if left empty, the latest will be used, the manifest will contain a fixed version for stable reproduction
-	public void install(Object zipContent) throws IOException {
+	public void install(Object zipContent, Boolean force) throws IOException {
 		InputStream input;
 		if (zipContent instanceof String) {
 			input = FileMethods.read((String) zipContent);
@@ -133,7 +129,7 @@ public class TritonMethods {
 			WritableContainer<ByteBuffer> writable = memoryItem.getWritable();
 			writable.write(IOUtils.wrap(IOUtils.toBytes(IOUtils.wrap(input)), true));
 			writable.close();
-			triton.install(memoryItem);
+			triton.install(memoryItem, force != null && force);
 		}
 		finally {
 			input.close();
@@ -326,7 +322,7 @@ public class TritonMethods {
 		return result;
 	}
 	
-	public void removeAuthor(String alias) throws KeyStoreException, IOException {
+	public void removeAuthor(String alias, Boolean force) throws KeyStoreException, IOException {
 		KeyStoreHandler keystore = TritonLocalConsole.getPackagingKeystore();
 		X509Certificate certificate = keystore.getCertificate("user-" + alias);
 		// you can only remove an author if you have uninstalled all his packages
@@ -335,7 +331,7 @@ public class TritonMethods {
 			if (!authored.isEmpty()) {
 				TritonConsoleInstance console = TritonLocalConsole.getConsole();
 				if (console != null && console.getInputProvider() != null) {
-					String result = console.getInputProvider().input("Do you want to remove all " + authored.size() + " packages attributed to this author? [y/N]: ", false);
+					String result = console.getInputProvider().input("Do you want to remove all " + authored.size() + " packages attributed to this author? [y/N]: ", false, "y");
 					if (result != null && result.equalsIgnoreCase("y")) {
 						uninstall(authored.toArray(new PackageDescription[0]));
 					}
@@ -343,6 +339,10 @@ public class TritonMethods {
 					else {
 						return;
 					}
+				}
+				// if we force it (for unsupervised), remove it
+				else if (force != null && force) {
+					uninstall(authored.toArray(new PackageDescription[0]));
 				}
 				else {
 					throw new IllegalStateException("Please uninstall all the packages authored by '" + alias + "' before removing the author");
