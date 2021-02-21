@@ -80,8 +80,8 @@ public class TritonShell {
 				int port = url.getPort() < 0 ? securePort : url.getPort();
 				X509Certificate[] chain = SecurityUtils.getChain(host, port, SSLContextType.TLS);
 				KeyStoreHandler keystore = TritonLocalConsole.getAuthenticationKeystore();
-				Map<String, X509Certificate> certificates = keystore.getCertificates();
-				if (!certificates.values().contains(chain[0])) {
+				if (!Triton.isTrusted(chain, keystore)) {
+					Map<String, X509Certificate> certificates = keystore.getCertificates();
 					StandardInputProvider inputProvider = new StandardInputProvider();
 					String result = inputProvider.input("Connecting to unknown server '" + TritonLocalConsole.getAlias(chain[0]) + "' (" + host + "), do you trust this server? [Y/n]: ", false);
 					if (result != null && result.equalsIgnoreCase("n")) {
@@ -164,7 +164,7 @@ public class TritonShell {
                 terminal.writer().println("_______________________________________________________________\n");
 				terminal.writer().println("* Triton Shell v" + VERSION + " connected to Triton Agent v" + version.trim());
 				terminal.writer().println("_______________________________________________________________\n");
-				terminal.writer().println("- quit			Disconnect from the triton agent (ctrl+c)");
+				terminal.writer().println("- exit			Disconnect from the triton agent (ctrl+c)");
 				terminal.writer().println("- clear			Clear the state");
 				// you can also end a regular line with a backslash for the same effect!
 				terminal.writer().println("- alt+enter		Create a multiline script");
@@ -224,7 +224,7 @@ public class TritonShell {
                         terminal.puts(Capability.clear_screen);
                         terminal.flush();
 					}
-					if (line.equals("quit")) {
+					if (line.equals("exit")) {
 						break;
 					}
 					// we need to send line by line so we can read the response

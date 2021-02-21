@@ -118,9 +118,6 @@ It defaults to a subfolder "scripts" of the hidden folder.
 
 # Packaging
 
-Packaging has two variants: secure and unsecure.
-Both behave exactly the same way except for the secure setup every package must be signed by a trusted authority.
-
 The basic distributable is a zip. Inside that zip must be at least one folder, the name of the folder must match a folder configured in the folder layout.
 For example if you want to distribute scripts, the zip file should have a root folder "scripts" and inside it, the actual scripts.
 You can have multiple root folders that are installed to their relative locations.
@@ -150,8 +147,16 @@ major.minor.patch
 This can be for example "1.0.1".
 
 The zip must also contain a file ``author.crt`` which is the certificate of the author. The CN of the author is considered to be the name of the author.
-Note that the certificate must be trusted by the triton server, either by installing it manually or by installing a trusted root certificate.
+Note that the certificate must be trusted by the triton server as a package provider, either by installing it manually or by installing a trusted root certificate.
 
+**TODO:** in the future we might need to allow for chains as well.
+
+For every file available in the zip, a signature must be included in the manifest. The signature must be generated using the private key of the author.
+Store the signature like this:
+
+signature-<file_path_in_zip>=<signature>
+
+If any file is unsigned or has a faulty signature, the entire zip is ignored.
 
 # Name
 

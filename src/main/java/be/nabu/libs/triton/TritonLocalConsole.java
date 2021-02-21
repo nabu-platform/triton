@@ -335,6 +335,7 @@ public class TritonLocalConsole {
 		}
 	}
 	
+	// doubtful that this is useful, this assumes the cert itself is installed, rather than for example a parent cert
 	public static String getValidatedAlias(X509Certificate certificate) {
 		if (certificate != null) {
 			try {
@@ -427,11 +428,10 @@ public class TritonLocalConsole {
 					instances.add(instance);
 					
 					// if you used a client certificate to gain access, we already established your identity
-					// if we still require password auth, we don't use the certificate as a means to authenticate you
 					if (source instanceof ConsoleSocketSource) {
 						X509Certificate certificate = ((ConsoleSocketSource) source).getCertificate();
 						if (certificate != null) {
-							String alias = getValidatedAlias(certificate);
+							String alias = getAlias(certificate);
 							if (alias != null) {
 								instance.setToken(new BasicPrincipalImpl(alias, null));
 							}
@@ -469,8 +469,8 @@ public class TritonLocalConsole {
 								script.append(line + "\n");
 								continue;
 							}
-							// if without trimming, you still typed quit (so no whitespace etc), we stop
-							else if (line.equals("quit")) {
+							// if without trimming, you still typed exit (so no whitespace etc), we stop
+							else if (line.equals("exit")) {
 								source.close();
 								break;
 							}

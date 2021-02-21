@@ -89,6 +89,10 @@
 			<groupId>be.nabu.libs.resources</groupId>
 			<artifactId>resources-file</artifactId>
 		</dependency>
+		<dependency>
+			<groupId>be.nabu.libs.resources</groupId>
+			<artifactId>resources-zip</artifactId>
+		</dependency>
 		
 		<dependency>
 			<groupId>be.nabu.libs.authentication</groupId>
