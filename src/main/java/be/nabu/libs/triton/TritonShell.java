@@ -79,7 +79,7 @@ public class TritonShell {
 				String host = url.getHost() == null ? "localhost" : url.getHost();
 				int port = url.getPort() < 0 ? securePort : url.getPort();
 				X509Certificate[] chain = SecurityUtils.getChain(host, port, SSLContextType.TLS);
-				KeyStoreHandler keystore = TritonLocalConsole.getKeystore();
+				KeyStoreHandler keystore = TritonLocalConsole.getAuthenticationKeystore();
 				Map<String, X509Certificate> certificates = keystore.getCertificates();
 				if (!certificates.values().contains(chain[0])) {
 					StandardInputProvider inputProvider = new StandardInputProvider();
@@ -94,7 +94,7 @@ public class TritonShell {
 						keyAttempt = key + counter++;
 					}
 					keystore.set(keyAttempt, chain[0]);
-					TritonLocalConsole.save(keystore);
+					TritonLocalConsole.saveAuthentication(keystore);
 					// renew context with the cert installed
 					context = TritonLocalConsole.getContext();
 				}
@@ -202,7 +202,7 @@ public class TritonShell {
 				// we could get rid of the space but then we need a proper prompt here, which will interfere with the prompt via telnet so we would have to cripple the straight-to-telnet shizzle
 				while ((line = consoleReader.readLine("$ ")) != null) {
 					if (line.equals("self")) {
-						X509Certificate certificate = TritonLocalConsole.getKeystore().getCertificate(TritonLocalConsole.getProfile());
+						X509Certificate certificate = TritonLocalConsole.getAuthenticationKeystore().getCertificate(TritonLocalConsole.getProfile());
 						StringWriter certWriter = new StringWriter();
 						SecurityUtils.encodeCertificate(certificate, certWriter);
 						certWriter.flush();
@@ -214,7 +214,7 @@ public class TritonShell {
 					if (line.equals("allow")) {
 						// force generation of the key (not clean!)
 						TritonLocalConsole.getContext();
-						X509Certificate certificate = TritonLocalConsole.getKeystore().getCertificate(TritonLocalConsole.getProfile());
+						X509Certificate certificate = TritonLocalConsole.getAuthenticationKeystore().getCertificate(TritonLocalConsole.getProfile());
 						StringWriter certWriter = new StringWriter();
 						SecurityUtils.encodeCertificate(certificate, certWriter);
 						certWriter.flush();
@@ -259,6 +259,9 @@ public class TritonShell {
 				}
 			}
 			catch (Exception e) {
+				if (Triton.DEBUG) {
+					e.printStackTrace();
+				}
 				// exiting...
 				try {
 					if (!socket.isClosed()) {

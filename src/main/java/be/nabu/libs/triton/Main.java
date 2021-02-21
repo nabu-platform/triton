@@ -24,6 +24,7 @@ public class Main {
 				System.setProperty(argument.substring(0, index), argument.substring(index + 1));
 			}
 		}
+		Triton.DEBUG = Boolean.parseBoolean(System.getProperty("debug", "false"));
 	}
 	
 	public static String getArgument(String name, String defaultValue, String...arguments) {

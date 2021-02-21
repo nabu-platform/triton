@@ -242,7 +242,7 @@ public class TritonLocalConsole {
 	}
 	
 	public static String getProfile() {
-		return System.getProperty("triton.profile", "triton-" + (Main.SERVER_MODE ? "server" : "client"));
+		return System.getProperty("triton.profile", System.getProperty("profile", "triton-" + (Main.SERVER_MODE ? "server" : "client")));
 	}
 	
 	public static String getName() {
@@ -304,7 +304,7 @@ public class TritonLocalConsole {
 		String defaultKeyPassword = Main.SERVER_MODE ? "triton-password" : null;
 		String keyPassword = getKeyPassword(defaultKeyPassword);
 		try {
-			KeyStoreHandler keystore = getKeystore();
+			KeyStoreHandler keystore = getAuthenticationKeystore();
 			PrivateKey privateKey = keystore.getPrivateKey(profile, keyPassword);
 			// if we don't have a key yet, generate a self signed set
 			if (privateKey == null) {
@@ -312,7 +312,7 @@ public class TritonLocalConsole {
 				X500Principal principal = SecurityUtils.createX500Principal(getName(), getOrganisation(), getOrganisationalUnit(), getLocality(), getState(), getCountry());
 				X509Certificate certificate = BCSecurityUtils.generateSelfSignedCertificate(pair, new Date(new Date().getTime() + (1000l * 60 * 60 * 24 * 365 * 100)), principal, principal);
 				keystore.set(profile, pair.getPrivate(), new X509Certificate[] { certificate }, keyPassword);
-				save(keystore);
+				saveAuthentication(keystore);
 			}
 			KeyManager[] keyManagers = keystore.getKeyManagers(keyPassword);
 			for (int i = 0; i < keyManagers.length; i++) {
@@ -338,7 +338,7 @@ public class TritonLocalConsole {
 	public static String getValidatedAlias(X509Certificate certificate) {
 		if (certificate != null) {
 			try {
-				for (Map.Entry<String, X509Certificate> entry : TritonLocalConsole.getKeystore().getCertificates().entrySet()) {
+				for (Map.Entry<String, X509Certificate> entry : TritonLocalConsole.getAuthenticationKeystore().getCertificates().entrySet()) {
 					if (entry.getValue().equals(certificate)) {
 						return getAlias(entry.getValue());
 					}
@@ -356,9 +356,17 @@ public class TritonLocalConsole {
 		return parts.get("CN");
 	}
 	
-	public static KeyStoreHandler getKeystore() {
+	public static KeyStoreHandler getAuthenticationKeystore() {
+		return getKeystore("authentication");
+	}
+	
+	public static KeyStoreHandler getPackagingKeystore() {
+		return getKeystore("packaging");
+	}
+	
+	public static KeyStoreHandler getKeystore(String type) {
 		try {
-			File store = new File(Triton.getFolder(), "keystore.jks");
+			File store = new File(Triton.getFolder(), type + ".jks");
 			String password = getKeystorePassword();
 			KeyStoreHandler handler;
 			if (!store.exists()) {
@@ -377,9 +385,13 @@ public class TritonLocalConsole {
 		}
 	}
 	
-	public static void save(KeyStoreHandler keystore) {
+	public static void saveAuthentication(KeyStoreHandler keystore) {
+		save("authentication", keystore);
+	}
+	
+	public static void save(String name, KeyStoreHandler keystore) {
 		try {
-			File store = new File(Triton.getFolder(), "keystore.jks");
+			File store = new File(Triton.getFolder(), name + ".jks");
 			try (OutputStream output = new BufferedOutputStream(new FileOutputStream(store))) {
 				keystore.save(output, getKeystorePassword());
 			}

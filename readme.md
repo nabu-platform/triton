@@ -85,6 +85,22 @@ When a new certificate is added, the 5123 port will go offline temporarily and b
 To add to the "something you have" (the certs), you can also add "something you know".
 This is not enforced by the Triton server, instead it is the password that is used to securely store your certificate, meaning it is entirely handled by the client.
 
+## Profiles
+
+You can use multiple profiles for your triton installation, this is mostly interesting when using the triton client though it can also be used on the triton server.
+
+The default profile is "triton-client" or "triton-server" depending on the mode. You can configure ``triton.profile`` or simply ``profile`` to choose a given profile.
+Each profile has its own public/private key meaning you can switch between identities by choosing a different profile.
+
+If there is no key yet for a given profile, one will be generated for your with a self signed certificate, you can manage the settings used in that certificate:
+
+- triton.name: the CN of the certificate, this defaults to the name of your computer unless specified otherwise
+- triton.organisation
+- triton.organisationalUnit
+- triton.locality
+- triton.state
+- triton.country
+
 # Folder Layout
 
 Triton needs a number of folders to operate, if you configure nothing, the defaults will be used.
@@ -99,6 +115,43 @@ This can be configured using ``triton.folder.config`` and defaults to the root o
 
 Triton needs a folder to store and use glue scripts. This can be configured by setting ``triton.folder.scripts``.
 It defaults to a subfolder "scripts" of the hidden folder.
+
+# Packaging
+
+Packaging has two variants: secure and unsecure.
+Both behave exactly the same way except for the secure setup every package must be signed by a trusted authority.
+
+The basic distributable is a zip. Inside that zip must be at least one folder, the name of the folder must match a folder configured in the folder layout.
+For example if you want to distribute scripts, the zip file should have a root folder "scripts" and inside it, the actual scripts.
+You can have multiple root folders that are installed to their relative locations.
+
+Each zip file should contain a ``manifest.tr`` file.
+The manifest is a key/value pair list structured like this:
+
+```
+key=value
+key=value
+```
+
+There are two mandatory descriptive fields:
+
+```
+module=<module>
+version=<version>
+```
+
+The module name must contain only lowercased letters and dashes.
+The version must adhere to this format:
+
+```
+major.minor.patch
+```
+
+This can be for example "1.0.1".
+
+The zip must also contain a file ``author.crt`` which is the certificate of the author. The CN of the author is considered to be the name of the author.
+Note that the certificate must be trusted by the triton server, either by installing it manually or by installing a trusted root certificate.
+
 
 # Name
 

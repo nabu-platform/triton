@@ -11,6 +11,8 @@ public class Triton {
 	
 	public static int DEFAULT_PLAIN_PORT = 5122;
 	public static int DEFAULT_SECURE_PORT = 5123;
+	
+	public static boolean DEBUG = false;
 
 	public void start() {
 		File target = getFolder("scripts");
