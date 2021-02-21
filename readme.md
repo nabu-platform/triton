@@ -177,6 +177,45 @@ signature-<file_path_in_zip>=<signature>
 
 If any file is unsigned or has a faulty signature, the entire zip is ignored.
 
+## Create a signed package
+
+An example of how we can create a simple signed zip, we log in with the triton console and type this:
+
+```
+$ content = zip(structure(scripts: structure(lambda("test.glue"): "echo('hello!')")))
+$ write("/home/alex/tmp/test-unsigned.zip", content)
+$ signed = sign(content, "test")
+$ write("/home/alex/tmp/test-signed.zip", signed)
+```
+
+The first is an unsigned zip containing a single folder "scripts" and within it a single file "test.glue".
+The second file we write is the same zip but signed with the default profile of the server.
+
+This is the packaging profile, rather than the authentication profile. This is a separate set of keys and certificates.
+
+An example of creating and installing a package:
+
+```
+# We create the zip in memory
+$ content = zip(structure(scripts: structure(lambda("test.glue"): "echo('hello!')")))
+# We sign it with our default profile
+$ signed = sign(content, "test")
+# We install the signed zip
+$ install(signed)
+# We validate that the package has been installed
+$ installed()
+[test@1.0.0]
+# We try to call the script that we installed
+$ test()
+hello!
+```
+
+You can write the signed package to the file system and distribute it however you want. In the future there will be a central distribution point as well.
+
+## Trusting an author
+
+When you try to install a package that belongs to an author you do not yet trust, you can choose to trust the author.
+
 # Name
 
 Triton is the messenger of the sea god Poseidon.

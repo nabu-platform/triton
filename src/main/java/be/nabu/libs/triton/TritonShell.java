@@ -218,7 +218,7 @@ public class TritonShell {
 						StringWriter certWriter = new StringWriter();
 						SecurityUtils.encodeCertificate(certificate, certWriter);
 						certWriter.flush();
-						line = "allow(\"" + certWriter.toString().replaceAll("[\r\n]+", "\n\t") + "\")";
+						line = "addUser(\"" + certWriter.toString().replaceAll("[\r\n]+", "\n\t") + "\")";
 					}
 					if (line.equals("clear")) {
                         terminal.puts(Capability.clear_screen);

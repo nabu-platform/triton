@@ -2,6 +2,7 @@ package be.nabu.libs.triton.impl;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.StringWriter;
@@ -26,6 +27,7 @@ import java.util.zip.ZipOutputStream;
 
 import javax.net.ssl.SSLContext;
 
+import be.nabu.glue.core.impl.methods.FileMethods;
 import be.nabu.libs.evaluator.annotations.MethodProviderClass;
 import be.nabu.libs.resources.ResourceUtils;
 import be.nabu.libs.resources.api.ReadableResource;
@@ -109,8 +111,33 @@ public class TritonMethods {
 	
 	// Install a package (update the manifest to reflect this)
 	// The version is optional, if left empty, the latest will be used, the manifest will contain a fixed version for stable reproduction
-	public void install(String url) {
-		
+	public void install(Object zipContent) throws IOException {
+		InputStream input;
+		if (zipContent instanceof String) {
+			input = FileMethods.read((String) zipContent);
+			if (input == null) {
+				throw new FileNotFoundException("Can not resolve the content of: " + zipContent);
+			}
+		}
+		else if (zipContent instanceof byte[]) {
+			input = new ByteArrayInputStream((byte []) zipContent);
+		}
+		else if (zipContent instanceof InputStream) {
+			input = (InputStream) zipContent;
+		}
+		else {
+			throw new IllegalArgumentException("Can not figure out the type of content");
+		}
+		try {
+			MemoryItem memoryItem = new MemoryItem(null);
+			WritableContainer<ByteBuffer> writable = memoryItem.getWritable();
+			writable.write(IOUtils.wrap(IOUtils.toBytes(IOUtils.wrap(input)), true));
+			writable.close();
+			triton.install(memoryItem);
+		}
+		finally {
+			input.close();
+		}
 	}
 	
 	// sign a particular package with a particular profile (default profile if left empty)
@@ -122,6 +149,9 @@ public class TritonMethods {
 		InputStream input;
 		if (zipContent instanceof String) {
 			input = be.nabu.glue.core.impl.methods.FileMethods.read((String) zipContent);
+			if (input == null) {
+				throw new FileNotFoundException("Can not resolve the content of: " + zipContent);
+			}
 		}
 		else if (zipContent instanceof byte[]) {
 			input = new ByteArrayInputStream((byte []) zipContent);
@@ -203,8 +233,12 @@ public class TritonMethods {
 	}
 	
 	// Uninstall a package (update the manifest)
-	public void uninstall(PackageDescription description) {
-		
+	public void uninstall(PackageDescription...description) {
+		if (description != null) {
+			for (PackageDescription single : description) {
+				triton.uninstall(single);
+			}
+		}
 	}
 	
 	// Check for available updates to the installed artifacts
@@ -217,7 +251,8 @@ public class TritonMethods {
 		
 	}
 	
-	public List<String> allowed() throws KeyStoreException {
+	// get allowed users (by specific cert)
+	public List<String> users() throws KeyStoreException {
 		KeyStoreHandler keystore = TritonLocalConsole.getAuthenticationKeystore();
 		Map<String, X509Certificate> certificates = keystore.getCertificates();
 		List<String> aliases = new ArrayList<String>();
@@ -229,7 +264,20 @@ public class TritonMethods {
 		return aliases;
 	}
 	
-	public void allow(String cert) throws KeyStoreException, CertificateException, UnsupportedEncodingException {
+	// get allowed authors (by specific cert)
+	public List<String> authors() throws KeyStoreException {
+		KeyStoreHandler keystore = TritonLocalConsole.getPackagingKeystore();
+		Map<String, X509Certificate> certificates = keystore.getCertificates();
+		List<String> aliases = new ArrayList<String>();
+		for (String key : certificates.keySet()) {
+			if (key.startsWith("user-")) {
+				aliases.add(key.substring("user-".length()));
+			}
+		}
+		return aliases;
+	}
+	
+	public void addUser(String cert) throws KeyStoreException, CertificateException, UnsupportedEncodingException {
 		KeyStoreHandler keystore = TritonLocalConsole.getAuthenticationKeystore();
 		X509Certificate parseCertificate = SecurityUtils.parseCertificate(new ByteArrayInputStream(cert.getBytes("ASCII")));
 		if (!keystore.getCertificates().values().contains(parseCertificate)) {
@@ -243,7 +291,7 @@ public class TritonMethods {
 		}
 	}
 	
-	public void disallow(String alias) throws KeyStoreException {
+	public void removeUser(String alias) throws KeyStoreException {
 		KeyStoreHandler keystore = TritonLocalConsole.getAuthenticationKeystore();
 		keystore.delete("user-" + alias);
 		TritonLocalConsole.saveAuthentication(keystore);
@@ -251,4 +299,57 @@ public class TritonMethods {
 		triton.getConsole().restartSecureThread();
 	}
 
+	public void addAuthor(String cert) throws KeyStoreException, CertificateException, UnsupportedEncodingException {
+		KeyStoreHandler keystore = TritonLocalConsole.getPackagingKeystore();
+		X509Certificate parseCertificate = SecurityUtils.parseCertificate(new ByteArrayInputStream(cert.getBytes("ASCII")));
+		if (!keystore.getCertificates().values().contains(parseCertificate)) {
+			keystore.set("user-" + TritonLocalConsole.getAlias(parseCertificate), parseCertificate);
+			TritonLocalConsole.savePackaging(keystore);
+		}
+		else {
+			System.out.println("Already trusted");
+		}
+	}
+	
+	// list all the packages by a specific author
+	public List<PackageDescription> authored(String alias) throws KeyStoreException {
+		KeyStoreHandler keystore = TritonLocalConsole.getPackagingKeystore();
+		List<PackageDescription> result = new ArrayList<PackageDescription>();
+		X509Certificate certificate = keystore.getCertificate("user-" + alias);
+		if (certificate != null) {
+			for (PackageDescription description : triton.getPackages().keySet()) {
+				if (certificate.equals(description.getCertificate())) {
+					result.add(description);
+				}
+			}
+		}
+		return result;
+	}
+	
+	public void removeAuthor(String alias) throws KeyStoreException, IOException {
+		KeyStoreHandler keystore = TritonLocalConsole.getPackagingKeystore();
+		X509Certificate certificate = keystore.getCertificate("user-" + alias);
+		// you can only remove an author if you have uninstalled all his packages
+		if (certificate != null) {
+			List<PackageDescription> authored = authored(alias);
+			if (!authored.isEmpty()) {
+				TritonConsoleInstance console = TritonLocalConsole.getConsole();
+				if (console != null && console.getInputProvider() != null) {
+					String result = console.getInputProvider().input("Do you want to remove all " + authored.size() + " packages attributed to this author? [y/N]: ", false);
+					if (result != null && result.equalsIgnoreCase("y")) {
+						uninstall(authored.toArray(new PackageDescription[0]));
+					}
+					// you specifically chose not to proceed
+					else {
+						return;
+					}
+				}
+				else {
+					throw new IllegalStateException("Please uninstall all the packages authored by '" + alias + "' before removing the author");
+				}
+			}
+			keystore.delete("user-" + alias);
+			TritonLocalConsole.savePackaging(keystore);
+		}
+	}
 }

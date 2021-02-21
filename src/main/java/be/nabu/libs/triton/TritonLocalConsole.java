@@ -84,6 +84,8 @@ public class TritonLocalConsole {
 		private ScriptRuntime rootRuntime;
 		private long id;
 		private Date connected = new Date();
+		private InputProvider inputProvider;
+		
 		TritonConsoleInstance(ConsoleSource source, ScriptRuntime rootRuntime) {
 			this.source = source;
 			this.rootRuntime = rootRuntime;
@@ -109,6 +111,12 @@ public class TritonLocalConsole {
 		}
 		public ConsoleSource getSource() {
 			return source;
+		}
+		public InputProvider getInputProvider() {
+			return inputProvider;
+		}
+		public void setInputProvider(InputProvider inputProvider) {
+			this.inputProvider = inputProvider;
 		}
 	}
 	
@@ -414,12 +422,19 @@ public class TritonLocalConsole {
 		}
 	}
 	
+	private static ThreadLocal<TritonConsoleInstance> console = new ThreadLocal<TritonConsoleInstance>();
+	
+	public static TritonConsoleInstance getConsole() {
+		return console.get();
+	}
+	
 	private void start(ConsoleSource source) {
 		threadPool.submit(new Runnable() {
 			private String responseEnd, inputEnd, passwordEnd;
 
 			@Override
 			public void run() {
+				console.set(null);
 				// if we write the "input", our response does not stop with a linefeed
 				// anyone listening to end of line won't pick it up
 				ScriptRuntime runtime = null;
@@ -436,6 +451,7 @@ public class TritonLocalConsole {
 						null
 					);
 					instance = new TritonConsoleInstance(source, runtime);
+					console.set(instance);
 					logger.info("Triton console #" + instance.getId() + " connected");
 					instances.add(instance);
 					
@@ -461,6 +477,35 @@ public class TritonLocalConsole {
 					StringBuilder script = new StringBuilder();
 					BufferedReader reader = new BufferedReader(source.getReader());
 					BufferedWriter writer = new BufferedWriter(source.getWriter());
+					
+					// because this is run synchronously, it shouldn't interfere with regular interaction
+					// if you ever request input asynchronously, this will...not work well :|
+					InputProvider inputProvider = new InputProvider() {
+						@Override
+						public String input(String message, boolean secret) throws IOException {
+							if (message != null) {
+								writer.write(message);
+								// if we have a specific marker for password input, use that
+								if (secret && !passwordEnd.isEmpty()) {
+									writer.write(passwordEnd + "\n");
+								}
+								// if we don't have a password marker but a generic input marker, use that
+								else if (!inputEnd.isEmpty()) {
+									writer.write(inputEnd + "\n");
+								}
+								// if we don't have a specific marker for input end, we use the response end marker
+								// note that all structured communication uses linefeeds and the response-end specifically is expected to be on a separate line
+								// if you use telnet, you set neither input nor response end and you will get inline prompt which is what you would expect
+								else if (!responseEnd.isEmpty()) {
+									writer.write("\n");
+									writer.write(responseEnd + "\n");
+								}
+								writer.flush();
+							}
+							return reader.readLine();
+						}
+					};
+					instance.setInputProvider(inputProvider);
 					
 					responseEnd = "";
 					inputEnd = "";
@@ -521,33 +566,7 @@ public class TritonLocalConsole {
 								VirtualScript virtualScript = new VirtualScript(dynamicScript, buffered.toString());
 								ScriptRuntime scriptRuntime = new ScriptRuntime(virtualScript, runtime.getExecutionContext(), null);
 								scriptRuntime.setFormatter(simpleOutputFormatter);
-								// because this is run synchronously, it shouldn't interfere with the above one
-								// if you ever request input asynchronously, this will...not work well :|
-								scriptRuntime.setInputProvider(new InputProvider() {
-									@Override
-									public String input(String message, boolean secret) throws IOException {
-										if (message != null) {
-											writer.write(message);
-											// if we have a specific marker for password input, use that
-											if (secret && !passwordEnd.isEmpty()) {
-												writer.write(passwordEnd + "\n");
-											}
-											// if we don't have a password marker but a generic input marker, use that
-											else if (!inputEnd.isEmpty()) {
-												writer.write(inputEnd + "\n");
-											}
-											// if we don't have a specific marker for input end, we use the response end marker
-											// note that all structured communication uses linefeeds and the response-end specifically is expected to be on a separate line
-											// if you use telnet, you set neither input nor response end and you will get inline prompt which is what you would expect
-											else if (!responseEnd.isEmpty()) {
-												writer.write("\n");
-												writer.write(responseEnd + "\n");
-											}
-											writer.flush();
-										}
-										return reader.readLine();
-									}
-								});
+								scriptRuntime.setInputProvider(inputProvider);
 								scriptRuntime.run();
 								script.append(buffered).append("\n");
 								buffered.delete(0, buffered.toString().length());
@@ -586,6 +605,7 @@ public class TritonLocalConsole {
 					logger.info("Triton console #" + instance.getId() + " disconnected: " + e.getMessage());
 				}
 				finally {
+					console.set(null);
 					if (instance != null) {
 						instances.remove(instance);
 					}

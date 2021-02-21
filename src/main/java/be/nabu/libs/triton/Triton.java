@@ -1,6 +1,7 @@
 package be.nabu.libs.triton;
 
 import java.io.BufferedOutputStream;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -23,6 +24,7 @@ import be.nabu.libs.resources.api.ResourceContainer;
 import be.nabu.libs.resources.file.FileDirectory;
 import be.nabu.libs.resources.file.FileItem;
 import be.nabu.libs.resources.zip.ZIPArchive;
+import be.nabu.libs.triton.TritonLocalConsole.TritonConsoleInstance;
 import be.nabu.libs.triton.impl.PackageDescription;
 import be.nabu.utils.codec.TranscoderUtils;
 import be.nabu.utils.codec.api.Transcoder;
@@ -50,8 +52,24 @@ public class Triton {
 	public static boolean DEBUG = false;
 
 	public Map<PackageDescription, ResourceContainer<?>> packages;
+	private TritonGlueEngine glue;
 	
 	public void start() {
+		glue = new TritonGlueEngine(this, getScriptContainers().toArray(new ResourceContainer[0]));
+		glue.setSandboxed(sandboxed);
+		
+		boolean enableAdmin = Boolean.parseBoolean(System.getProperty("triton.local.enabled", "true"));
+		int plainPort = Integer.parseInt(System.getProperty("triton.local.port", "" + DEFAULT_PLAIN_PORT));
+		int securePort = Integer.parseInt(System.getProperty("triton.secure.port", "" + DEFAULT_SECURE_PORT));
+		console = new TritonLocalConsole(enableAdmin ? plainPort : null, securePort, glue, 10);
+		console.start();
+	}
+	
+	public void refreshScripts() {
+		glue.reloadScriptContainers(getScriptContainers().toArray(new ResourceContainer[0]));
+	}
+
+	private List<ResourceContainer<?>> getScriptContainers() {
 		// we have a local folder where you can drop scripts, this allows for some rapid prototyping stuff
 		File target = getFolder("scripts");
 		System.out.println("Script folder: " + target.getAbsolutePath());
@@ -70,15 +88,7 @@ public class Triton {
 				containers.add((ResourceContainer<?>) child);
 			}
 		}
-		
-		TritonGlueEngine glue = new TritonGlueEngine(this, containers.toArray(new ResourceContainer[0]));
-		glue.setSandboxed(sandboxed);
-		
-		boolean enableAdmin = Boolean.parseBoolean(System.getProperty("triton.local.enabled", "true"));
-		int plainPort = Integer.parseInt(System.getProperty("triton.local.port", "" + DEFAULT_PLAIN_PORT));
-		int securePort = Integer.parseInt(System.getProperty("triton.secure.port", "" + DEFAULT_SECURE_PORT));
-		console = new TritonLocalConsole(enableAdmin ? plainPort : null, securePort, glue, 10);
-		console.start();
+		return containers;
 	}
 	
 	public TritonLocalConsole getConsole() {
@@ -129,6 +139,7 @@ public class Triton {
 								archive.setSource(fileItem);
 								PackageDescription archiveName = getValidDescription(archive);
 								if (archiveName != null) {
+									archiveName.setInstallation(child);
 									packages.put(archiveName, archive);
 								}
 								else {
@@ -190,6 +201,7 @@ public class Triton {
 		// TODO: validate the manifest etc
 		Properties manifest = getManifest(archive);
 		if (manifest == null) {
+			System.err.println("No manifest in archive");
 			return null;
 		}
 		String module = manifest.getProperty("module");
@@ -199,6 +211,7 @@ public class Triton {
 		}
 		X509Certificate author = getAuthor(archive);
 		if (author == null) {
+			System.err.println("Archive has no author");
 			return null;
 		}
 		KeyStoreHandler packagingKeystore = TritonLocalConsole.getPackagingKeystore();
@@ -207,13 +220,14 @@ public class Triton {
 			return null;
 		}
 		// trusting the author is a good first step, but anyone can slap in the author cert into an otherwise custom made zip
-		if (!isValid(archive, null, manifest, author)) {
+		if (!isValid(archive, null, manifest, author, true)) {
 			return null;
 		}
 		PackageDescription description = new PackageDescription();
 		description.setAuthor(TritonLocalConsole.getAlias(author));
 		description.setModule(module);
 		description.setVersion(manifest.getProperty("version"));
+		description.setCertificate(author);
 		return description;
 	}
 	
@@ -243,18 +257,19 @@ public class Triton {
 		}
 	}
 	
-	private static boolean isValid(ResourceContainer<?> root, String path, Properties manifest, X509Certificate author) {
+	private static boolean isValid(ResourceContainer<?> root, String path, Properties manifest, X509Certificate author, boolean isRoot) {
 		for (Resource resource : root) {
 			String childPath = path == null ? resource.getName() : path + "/" + resource.getName();
 			// only files have to be signed, not directories
-			if (resource instanceof ReadableResource) {
+			// we don't sign files on the very root of the package
+			if (resource instanceof ReadableResource && !isRoot) {
 				if (!isValidFile((ReadableResource) resource, childPath, manifest, author)) {
 					return false;
 				}
 			}
 			// recurse
 			if (resource instanceof ResourceContainer) {
-				if (!isValid((ResourceContainer<?>) resource, childPath, manifest, author)) {
+				if (!isValid((ResourceContainer<?>) resource, childPath, manifest, author, false)) {
 					return false;
 				}
 			}
@@ -266,6 +281,7 @@ public class Triton {
 		try {
 			String signature = manifest.getProperty("signature-" + path);
 			if (signature == null) {
+				System.err.println("Could not find signature for: " + path);
 				return false;
 			}
 			byte[] decoded = decode(signature);
@@ -297,6 +313,12 @@ public class Triton {
 			if (keystore.getCertificates().values().contains(chain[0])) {
 				return true;
 			}
+			// check if it matches a private key that we have
+			for (X509Certificate [] potential : keystore.getPrivateKeys().values()) {
+				if (potential[0].equals(chain[0])) {
+					return true;
+				}
+			}
 			PKIXCertPathBuilderResult validateCertificateChain = BCSecurityUtils.validateCertificateChain(chain, keystore.getCertificates().values().toArray(new X509Certificate[0]));
 			if (validateCertificateChain == null) {
 				return false;
@@ -314,15 +336,50 @@ public class Triton {
 	// this assumes it has already been validated
 	public void install(Resource item) {
 		ZIPArchive archive = toArchive(item);
+
+		// we check the author separately, in most cases a failed installation is due to an unknown author
+		// if we have an interaction channel to the user, we can ask him if he wants to allow the author
+		TritonConsoleInstance console = TritonLocalConsole.getConsole();
+		if (console != null && console.getInputProvider() != null) {
+			X509Certificate author = getAuthor(archive);
+			if (author != null) {
+				KeyStoreHandler packagingKeystore = TritonLocalConsole.getPackagingKeystore();
+				if (!isTrusted(new X509Certificate[] { author }, packagingKeystore)) {
+					try {
+						// adding an author is a big ask, you have to be sure so we take N by default
+						String result = console.getInputProvider().input("The author '" + TritonLocalConsole.getAlias(author) + "' is not trusted, do you want to add the author to your list of trusted authors? [y/N]: ", false);
+						if (result != null && "y".equalsIgnoreCase(result.trim())) {
+							if (!packagingKeystore.getCertificates().values().contains(author)) {
+								packagingKeystore.set("user-" + TritonLocalConsole.getAlias(author), author);
+								TritonLocalConsole.savePackaging(packagingKeystore);
+							}
+							else {
+								System.out.println("Already trusted");
+							}
+						}
+						// we actively chose not to install, no point in continuing
+						else {
+							return;
+						}
+					}
+					catch (Exception e) {
+						throw new RuntimeException(e);
+					}
+				}
+			}
+		}
+		
 		PackageDescription description = getValidDescription(archive);
 		if (description == null) {
 			throw new IllegalArgumentException("Archive is not trusted");
 		}
+		boolean requireReload = false;
 		for (Resource child : archive) {
 			// we only install full directories
 			if (child instanceof ResourceContainer) {
 				// script folders are read from the zip itself
 				if ("scripts".equals(child.getName())) {
+					requireReload = true;
 					continue;
 				}
 				// the target folder
@@ -347,6 +404,7 @@ public class Triton {
 		File file = new File(folder, generateUniqueName(description.getModule() + "-" + description.getVersion(), "application/zip"));
 		try (OutputStream output = new BufferedOutputStream(new FileOutputStream(file)); ReadableContainer<ByteBuffer> readable = ((ReadableResource) item).getReadable()) {
 			IOUtils.copyBytes(readable, IOUtils.wrap(output));
+			description.setInstallation(file);
 		}
 		catch (Exception e) {
 			throw new RuntimeException(e);
@@ -356,6 +414,11 @@ public class Triton {
 			packages.put(description, archive);
 		}
 		// TODO: run any post-installation scripts available in the zip
+		
+		// if new scripts were added, reload
+		if (requireReload) {
+			refreshScripts();
+		}
 	}
 
 	public static ZIPArchive toArchive(Resource item) {
@@ -371,11 +434,15 @@ public class Triton {
 	public void uninstall(PackageDescription description) {
 		Map<PackageDescription, ResourceContainer<?>> packages = getPackages();
 		File installation = description.getInstallation();
+		System.out.println("Uninstalling: " + installation);
 		if (installation != null && installation.exists()) {
-			uninstall(new FileItem(null, installation, false));
+			boolean requireReload = uninstall(new FileItem(null, installation, false));
 			installation.delete();
 			synchronized(packages) {
 				packages.remove(description);
+			}
+			if (requireReload) {
+				refreshScripts();
 			}
 		}
 	}
@@ -385,7 +452,8 @@ public class Triton {
 	}
 	
 	// uninstall a resource
-	private void uninstall(Resource item) {
+	private boolean uninstall(Resource item) {
+		boolean requireReload = false;
 		ZIPArchive archive = toArchive(item);
 		Properties manifest = getManifest(archive);
 		if (manifest == null) {
@@ -401,6 +469,7 @@ public class Triton {
 			if (child instanceof ResourceContainer) {
 				// script folders are read from the zip itself
 				if ("scripts".equals(child.getName())) {
+					requireReload = true;
 					continue;
 				}
 				File folder = getFolder(child.getName());
@@ -410,6 +479,8 @@ public class Triton {
 			}
 		}
 		// TODO: run post-uninstall hooks
+		
+		return requireReload;
 	}
 	
 	private static void removeIfValid(Properties manifest, X509Certificate author, File file, String path, ResourceContainer<?> current) {

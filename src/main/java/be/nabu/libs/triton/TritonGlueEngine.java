@@ -15,12 +15,13 @@ import be.nabu.libs.triton.impl.TritonMethods;
 
 public class TritonGlueEngine {
 	private Charset charset = Charset.forName("UTF-8");
-	private ScriptRepository repository;
+	private MultipleRepository repository;
 	private boolean sandboxed;
+	private GlueParserProvider parserProvider;
 	
 	public TritonGlueEngine(Triton triton, ResourceContainer<?>...scripts) {
 		try {
-			GlueParserProvider parserProvider = new GlueParserProvider(new StaticJavaMethodProvider(new TritonMethods(triton))) {
+			parserProvider = new GlueParserProvider(new StaticJavaMethodProvider(new TritonMethods(triton))) {
 				@Override
 				public MethodProvider[] getMethodProviders(ScriptRepository repository) {
 					MethodProvider[] methodProviders = super.getMethodProviders(repository);
@@ -42,10 +43,6 @@ public class TritonGlueEngine {
 			if (scripts == null || scripts.length == 0) {
 				throw new RuntimeException("No script folder found");
 			}
-			// if there is only one, we use that
-			else if (scripts.length == 1) {
-				repository = new ScannableScriptRepository(null, scripts[0], parserProvider, charset, true);
-			}
 			else {
 				MultipleRepository result = new MultipleRepository(null);
 				for (ResourceContainer<?> script : scripts) {
@@ -55,6 +52,18 @@ public class TritonGlueEngine {
 			}
 		}
 		catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+	}
+	
+	public void reloadScriptContainers(ResourceContainer<?>...scripts) {
+		repository.removeAll();
+		try {
+			for (ResourceContainer<?> script : scripts) {
+				repository.add(new ScannableScriptRepository(null, script, parserProvider, charset, true));
+			}
+		}
+		catch (Exception e) {
 			throw new RuntimeException(e);
 		}
 	}

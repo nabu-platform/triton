@@ -1,10 +1,12 @@
 package be.nabu.libs.triton.impl;
 
 import java.io.File;
+import java.security.cert.X509Certificate;
 
 public class PackageDescription {
 	private String author, module, version;
 	private File installation;
+	private X509Certificate certificate;
 
 	public String getAuthor() {
 		return author;
@@ -30,6 +32,17 @@ public class PackageDescription {
 	}
 	public void setInstallation(File installation) {
 		this.installation = installation;
+	}
+	
+	public X509Certificate getCertificate() {
+		return certificate;
+	}
+	public void setCertificate(X509Certificate certificate) {
+		this.certificate = certificate;
+	}
+	@Override
+	public String toString() {
+		return module + "@" + version;
 	}
 	
 	@Override
