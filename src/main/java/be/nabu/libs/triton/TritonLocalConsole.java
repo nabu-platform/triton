@@ -299,12 +299,15 @@ public class TritonLocalConsole {
 	}
 	
 	public static SSLContext getContext() {
-		String profile = getProfile();
 		// in server mode, we don't force a password
 		String defaultKeyPassword = Main.SERVER_MODE ? "triton-password" : null;
 		String keyPassword = getKeyPassword(defaultKeyPassword);
+		return getContext(getProfile(), keyPassword, true);
+	}
+	
+	public static SSLContext getContext(String profile, String keyPassword, boolean authentication) {
 		try {
-			KeyStoreHandler keystore = getAuthenticationKeystore();
+			KeyStoreHandler keystore = authentication ? getAuthenticationKeystore() : getPackagingKeystore();
 			PrivateKey privateKey = keystore.getPrivateKey(profile, keyPassword);
 			// if we don't have a key yet, generate a self signed set
 			if (privateKey == null) {
@@ -312,7 +315,12 @@ public class TritonLocalConsole {
 				X500Principal principal = SecurityUtils.createX500Principal(getName(), getOrganisation(), getOrganisationalUnit(), getLocality(), getState(), getCountry());
 				X509Certificate certificate = BCSecurityUtils.generateSelfSignedCertificate(pair, new Date(new Date().getTime() + (1000l * 60 * 60 * 24 * 365 * 100)), principal, principal);
 				keystore.set(profile, pair.getPrivate(), new X509Certificate[] { certificate }, keyPassword);
-				saveAuthentication(keystore);
+				if (authentication) {
+					saveAuthentication(keystore);
+				}
+				else {
+					savePackaging(keystore);
+				}
 			}
 			KeyManager[] keyManagers = keystore.getKeyManagers(keyPassword);
 			for (int i = 0; i < keyManagers.length; i++) {
@@ -388,6 +396,10 @@ public class TritonLocalConsole {
 	
 	public static void saveAuthentication(KeyStoreHandler keystore) {
 		save("authentication", keystore);
+	}
+	
+	public static void savePackaging(KeyStoreHandler keystore) {
+		save("packaging", keystore);
 	}
 	
 	public static void save(String name, KeyStoreHandler keystore) {

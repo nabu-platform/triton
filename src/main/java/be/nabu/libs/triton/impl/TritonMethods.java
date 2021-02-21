@@ -1,20 +1,50 @@
 package be.nabu.libs.triton.impl;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.StringWriter;
 import java.io.UnsupportedEncodingException;
+import java.security.InvalidKeyException;
 import java.security.KeyStoreException;
+import java.security.NoSuchAlgorithmException;
+import java.security.PrivateKey;
+import java.security.Signature;
+import java.security.SignatureException;
+import java.security.UnrecoverableKeyException;
+import java.security.cert.Certificate;
+import java.security.cert.CertificateEncodingException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
+
+import javax.net.ssl.SSLContext;
 
 import be.nabu.libs.evaluator.annotations.MethodProviderClass;
+import be.nabu.libs.resources.ResourceUtils;
+import be.nabu.libs.resources.api.ReadableResource;
+import be.nabu.libs.resources.api.Resource;
+import be.nabu.libs.resources.api.ResourceContainer;
+import be.nabu.libs.resources.memory.MemoryDirectory;
+import be.nabu.libs.resources.memory.MemoryItem;
+import be.nabu.libs.resources.memory.MemoryResource;
+import be.nabu.libs.triton.Main;
 import be.nabu.libs.triton.Triton;
 import be.nabu.libs.triton.TritonLocalConsole;
 import be.nabu.libs.triton.TritonLocalConsole.TritonConsoleInstance;
+import be.nabu.utils.io.IOUtils;
+import be.nabu.utils.io.api.ByteBuffer;
+import be.nabu.utils.io.api.ReadableContainer;
+import be.nabu.utils.io.api.WritableContainer;
 import be.nabu.utils.security.KeyStoreHandler;
 import be.nabu.utils.security.SecurityUtils;
+import be.nabu.utils.security.SignatureType;
 
 // a "package" can be anything?
 // for example it could be scripts (most likely) but also like...nabu repository entries?
@@ -68,8 +98,8 @@ public class TritonMethods {
 	}
 	
 	// List installed packages
-	public void installed() {
-		
+	public List<PackageDescription> installed() {
+		return triton.getInstalled();
 	}
 	
 	// List available packages (can add a query parameter)
@@ -79,12 +109,101 @@ public class TritonMethods {
 	
 	// Install a package (update the manifest to reflect this)
 	// The version is optional, if left empty, the latest will be used, the manifest will contain a fixed version for stable reproduction
-	public void install(String artifactId, String version) {
+	public void install(String url) {
 		
 	}
 	
+	// sign a particular package with a particular profile (default profile if left empty)
+	// you can create the package using classic "zip" methods
+	public byte[] sign(Object zipContent, String module, String version, String profile, String profilePassword) throws IOException, UnrecoverableKeyException, KeyStoreException, NoSuchAlgorithmException, CertificateEncodingException, InvalidKeyException, SignatureException {
+		if (module == null) {
+			throw new IllegalArgumentException("Must provide a module name");
+		}
+		InputStream input;
+		if (zipContent instanceof String) {
+			input = be.nabu.glue.core.impl.methods.FileMethods.read((String) zipContent);
+		}
+		else if (zipContent instanceof byte[]) {
+			input = new ByteArrayInputStream((byte []) zipContent);
+		}
+		else if (zipContent instanceof InputStream) {
+			input = (InputStream) zipContent;
+		}
+		else {
+			throw new IllegalArgumentException("Can not figure out the type of content");
+		}
+		try {
+			MemoryDirectory memoryDirectory = new MemoryDirectory();
+			ResourceUtils.unzip(new ZipInputStream(input), memoryDirectory);
+			Properties manifest = new Properties();
+			manifest.setProperty("module", module);
+			manifest.setProperty("version", version == null ? "1.0.0" : version);
+			if (profile == null) {
+				profile = TritonLocalConsole.getProfile();
+			}
+			String keyPassword = profilePassword == null ? "triton-password" : profilePassword;
+			// force generation of key if relevant
+			TritonLocalConsole.getContext(profile, keyPassword, false);
+			KeyStoreHandler packagingKeystore = TritonLocalConsole.getPackagingKeystore();
+			Certificate[] certificateChain = packagingKeystore.getKeyStore().getCertificateChain(profile);
+			PrivateKey privateKey = packagingKeystore.getPrivateKey(profile, keyPassword);
+			sign(manifest, privateKey, null, memoryDirectory);
+			
+			// we write the manifest
+			MemoryItem create = (MemoryItem) memoryDirectory.create("manifest.tr", "text/plain");
+			WritableContainer<ByteBuffer> writable = create.getWritable();
+			try {
+				manifest.store(IOUtils.toOutputStream(writable), null);
+			}
+			finally {
+				writable.close();
+			}
+			
+			// and the author
+			StringWriter writer = new StringWriter();
+			SecurityUtils.encodeCertificate((X509Certificate) certificateChain[0], writer);
+			create = (MemoryItem) memoryDirectory.create("author.crt", "text/plain");
+			writable = create.getWritable();
+			try {
+				IOUtils.toOutputStream(writable).write(writer.toString().getBytes("ASCII"));
+			}
+			finally {
+				writable.close();
+			}
+			ByteArrayOutputStream output = new ByteArrayOutputStream();
+			ZipOutputStream zip = new ZipOutputStream(output);
+			ResourceUtils.zip(memoryDirectory, zip, false);
+			zip.close();
+			return output.toByteArray();
+		}
+		finally {
+			input.close();
+		}
+	}
+	
+	private void sign(Properties manifest, PrivateKey key, String path, ResourceContainer<?> root) throws InvalidKeyException, NoSuchAlgorithmException, SignatureException, IOException {
+		for (Resource child : root) {
+			String childPath = path == null ? child.getName() : path + "/" + child.getName();
+			if (child instanceof ResourceContainer) {
+				sign(manifest, key, childPath, (ResourceContainer<?>) child);
+			}
+			if (child instanceof ReadableResource) {
+				ReadableContainer<ByteBuffer> readable = ((ReadableResource) child).getReadable();
+				try {
+					Signature sign = SecurityUtils.sign(IOUtils.toInputStream(readable), key, SignatureType.SHA512WITHRSA);
+					byte[] signature = sign.sign();
+					String encoded = Triton.encode(signature);
+					manifest.setProperty("signature-" + childPath, encoded);
+				}
+				finally {
+					readable.close();
+				}
+			}
+		}
+	}
+	
 	// Uninstall a package (update the manifest)
-	public void uninstall(String artifactId) {
+	public void uninstall(PackageDescription description) {
 		
 	}
 	

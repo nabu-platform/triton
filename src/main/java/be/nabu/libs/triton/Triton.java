@@ -1,9 +1,12 @@
 package be.nabu.libs.triton;
 
+import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.Charset;
 import java.security.GeneralSecurityException;
-import java.security.KeyStoreException;
 import java.security.cert.PKIXCertPathBuilderResult;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
@@ -11,17 +14,23 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.UUID;
 
-import be.nabu.libs.resources.ResourceReadableContainer;
+import be.nabu.libs.resources.ResourceUtils;
 import be.nabu.libs.resources.api.ReadableResource;
 import be.nabu.libs.resources.api.Resource;
 import be.nabu.libs.resources.api.ResourceContainer;
 import be.nabu.libs.resources.file.FileDirectory;
 import be.nabu.libs.resources.file.FileItem;
 import be.nabu.libs.resources.zip.ZIPArchive;
+import be.nabu.libs.triton.impl.PackageDescription;
 import be.nabu.utils.codec.TranscoderUtils;
+import be.nabu.utils.codec.api.Transcoder;
 import be.nabu.utils.codec.impl.Base64Decoder;
 import be.nabu.utils.codec.impl.Base64Encoder;
+import be.nabu.utils.codec.impl.QuotedPrintableEncoder;
+import be.nabu.utils.codec.impl.QuotedPrintableEncoding;
+import be.nabu.utils.io.ContentTypeMap;
 import be.nabu.utils.io.IOUtils;
 import be.nabu.utils.io.api.ByteBuffer;
 import be.nabu.utils.io.api.ReadableContainer;
@@ -40,7 +49,7 @@ public class Triton {
 	
 	public static boolean DEBUG = false;
 
-	public Map<String, ResourceContainer<?>> packages;
+	public Map<PackageDescription, ResourceContainer<?>> packages;
 	
 	public void start() {
 		// we have a local folder where you can drop scripts, this allows for some rapid prototyping stuff
@@ -104,11 +113,11 @@ public class Triton {
 	
 	// considering if for scripts we want to force the root folder to be the same as the module name?
 	// to prevent people from spamming over one another?
-	public Map<String, ResourceContainer<?>> getPackages() {
+	public Map<PackageDescription, ResourceContainer<?>> getPackages() {
 		if (packages == null) {
 			synchronized(this) {
 				if (packages == null) {
-					Map<String, ResourceContainer<?>> packages = new HashMap<String, ResourceContainer<?>>();
+					Map<PackageDescription, ResourceContainer<?>> packages = new HashMap<PackageDescription, ResourceContainer<?>>();
 					File folder = getFolder("packages");
 					// only if the folder exists do we have packages
 					if (folder.exists()) {
@@ -118,7 +127,7 @@ public class Triton {
 								FileItem fileItem = new FileItem(null, child, false);
 								ZIPArchive archive = new ZIPArchive();
 								archive.setSource(fileItem);
-								String archiveName = getValidArchiveName(archive);
+								PackageDescription archiveName = getValidDescription(archive);
 								if (archiveName != null) {
 									packages.put(archiveName, archive);
 								}
@@ -135,7 +144,7 @@ public class Triton {
 		return packages;
 	}
 	
-	private Properties getManifest(ResourceContainer<?> archive) {
+	private static Properties getManifest(ResourceContainer<?> archive) {
 		Resource child = archive.getChild("manifest.tr");
 		if (!(child instanceof ReadableResource)) {
 			return null;
@@ -156,7 +165,7 @@ public class Triton {
 		}
 	}
 	
-	private X509Certificate getAuthor(ResourceContainer<?> archive) {
+	private static X509Certificate getAuthor(ResourceContainer<?> archive) {
 		Resource child = archive.getChild("author.crt");
 		if (!(child instanceof ReadableResource)) {
 			return null;
@@ -177,7 +186,7 @@ public class Triton {
 	
 	// this validates the archive and returns the proper name for this archive
 	// this is a two-fer
-	private String getValidArchiveName(ResourceContainer<?> archive) {
+	private static PackageDescription getValidDescription(ResourceContainer<?> archive) {
 		// TODO: validate the manifest etc
 		Properties manifest = getManifest(archive);
 		if (manifest == null) {
@@ -201,8 +210,11 @@ public class Triton {
 		if (!isValid(archive, null, manifest, author)) {
 			return null;
 		}
-		// the name is the combination of the author and the module
-		return TritonLocalConsole.getAlias(author) + "::" + module;
+		PackageDescription description = new PackageDescription();
+		description.setAuthor(TritonLocalConsole.getAlias(author));
+		description.setModule(module);
+		description.setVersion(manifest.getProperty("version"));
+		return description;
 	}
 	
 	public static byte [] decode(String content) {
@@ -231,32 +243,12 @@ public class Triton {
 		}
 	}
 	
-	private boolean isValid(ResourceContainer<?> root, String path, Properties manifest, X509Certificate author) {
+	private static boolean isValid(ResourceContainer<?> root, String path, Properties manifest, X509Certificate author) {
 		for (Resource resource : root) {
 			String childPath = path == null ? resource.getName() : path + "/" + resource.getName();
 			// only files have to be signed, not directories
 			if (resource instanceof ReadableResource) {
-				try {
-					String signature = manifest.getProperty("signature-" + childPath);
-					if (signature == null) {
-						return false;
-					}
-					byte[] decoded = decode(signature);
-					ReadableContainer<ByteBuffer> readable = ((ReadableResource) resource).getReadable();
-					try {
-						if (!SecurityUtils.verify(IOUtils.toInputStream(readable), decoded, author.getPublicKey(), SignatureType.SHA512WITHRSA)) {
-							System.err.println("Invalid signature for file: " + path);
-							return false;
-						}
-					}
-					finally {
-						readable.close();
-					}
-				}
-				catch (Exception e) {
-					if (DEBUG) {
-						e.printStackTrace();
-					}
+				if (!isValidFile((ReadableResource) resource, childPath, manifest, author)) {
 					return false;
 				}
 			}
@@ -268,6 +260,33 @@ public class Triton {
 			}
 		}
 		return true;
+	}
+	
+	private static boolean isValidFile(ReadableResource file, String path, Properties manifest, X509Certificate author) {
+		try {
+			String signature = manifest.getProperty("signature-" + path);
+			if (signature == null) {
+				return false;
+			}
+			byte[] decoded = decode(signature);
+			ReadableContainer<ByteBuffer> readable = file.getReadable();
+			try {
+				if (!SecurityUtils.verify(IOUtils.toInputStream(readable), decoded, author.getPublicKey(), SignatureType.SHA512WITHRSA)) {
+					System.err.println("Invalid signature for file: " + path);
+					return false;
+				}
+				return true;
+			}
+			finally {
+				readable.close();
+			}
+		}
+		catch (Exception e) {
+			if (DEBUG) {
+				e.printStackTrace();
+			}
+			return false;
+		}
 	}
 	
 	// TODO: validate that this works with correct chains etc, currently it has only been tested with self signed single ones
@@ -289,6 +308,147 @@ public class Triton {
 				e.printStackTrace();
 			}
 			return false;
+		}
+	}
+	
+	// this assumes it has already been validated
+	public void install(Resource item) {
+		ZIPArchive archive = toArchive(item);
+		PackageDescription description = getValidDescription(archive);
+		if (description == null) {
+			throw new IllegalArgumentException("Archive is not trusted");
+		}
+		for (Resource child : archive) {
+			// we only install full directories
+			if (child instanceof ResourceContainer) {
+				// script folders are read from the zip itself
+				if ("scripts".equals(child.getName())) {
+					continue;
+				}
+				// the target folder
+				File target = getFolder(child.getName());
+				if (!target.exists()) {
+					target.mkdirs();
+				}
+				try {
+					ResourceUtils.copy(child, new FileDirectory(null, target, false), null, true, true);
+				}
+				catch (IOException e) {
+					throw new RuntimeException(e);
+				}
+			}
+		}
+		Map<PackageDescription, ResourceContainer<?>> packages = getPackages();
+		// once installed, we add it to the packages folder
+		File folder = getFolder("packages");
+		if (!folder.exists()) {
+			folder.mkdirs();
+		}
+		File file = new File(folder, generateUniqueName(description.getModule() + "-" + description.getVersion(), "application/zip"));
+		try (OutputStream output = new BufferedOutputStream(new FileOutputStream(file)); ReadableContainer<ByteBuffer> readable = ((ReadableResource) item).getReadable()) {
+			IOUtils.copyBytes(readable, IOUtils.wrap(output));
+		}
+		catch (Exception e) {
+			throw new RuntimeException(e);
+		}
+		// add to the installed packages
+		synchronized(packages) {
+			packages.put(description, archive);
+		}
+		// TODO: run any post-installation scripts available in the zip
+	}
+
+	public static ZIPArchive toArchive(Resource item) {
+		// TODO: run pre-installation scripts?
+		if (!(item instanceof ReadableResource)) {
+			throw new IllegalArgumentException("Can only use readable files");
+		}
+		ZIPArchive archive = new ZIPArchive();
+		archive.setSource(item);
+		return archive;
+	}
+	
+	public void uninstall(PackageDescription description) {
+		Map<PackageDescription, ResourceContainer<?>> packages = getPackages();
+		File installation = description.getInstallation();
+		if (installation != null && installation.exists()) {
+			uninstall(new FileItem(null, installation, false));
+			installation.delete();
+			synchronized(packages) {
+				packages.remove(description);
+			}
+		}
+	}
+	
+	public List<PackageDescription> getInstalled() {
+		return new ArrayList<PackageDescription>(getPackages().keySet());
+	}
+	
+	// uninstall a resource
+	private void uninstall(Resource item) {
+		ZIPArchive archive = toArchive(item);
+		Properties manifest = getManifest(archive);
+		if (manifest == null) {
+			throw new IllegalArgumentException("Can not find manifest");
+		}
+		X509Certificate author = getAuthor(archive);
+		if (author == null) {
+			throw new IllegalArgumentException("Can not find author");
+		}
+		// TODO: run pre-uninstall hooks
+		for (Resource child : archive) {
+			// we only install full directories
+			if (child instanceof ResourceContainer) {
+				// script folders are read from the zip itself
+				if ("scripts".equals(child.getName())) {
+					continue;
+				}
+				File folder = getFolder(child.getName());
+				if (folder.exists()) {
+					removeIfValid(manifest, author, folder, null, (ResourceContainer<?>) child);
+				}
+			}
+		}
+		// TODO: run post-uninstall hooks
+	}
+	
+	private static void removeIfValid(Properties manifest, X509Certificate author, File file, String path, ResourceContainer<?> current) {
+		for (Resource child : current) {
+			File childFile = new File(file, child.getName());
+			String childPath = path == null ? child.getName() : path + "/" + child.getName();
+			// only relevant if it exists
+			if (childFile.exists()) {
+				if (child instanceof ResourceContainer) {
+					removeIfValid(manifest, author, childFile, childPath, (ResourceContainer<?>) child);
+					if (childFile.listFiles().length == 0) {
+						childFile.delete();
+					}
+				}
+				// we check that the signature still matches, only remove files that are from this archive
+				else if (child instanceof ReadableResource) {
+					if (isValidFile((ReadableResource) child, childPath, manifest, author)) {
+						childFile.delete();
+					}
+				}
+			}
+		}
+	}
+	
+	/**
+	 * The name in a resource container must be unique
+	 * However the user must be able to store multiple resources with the same name which may end up in the same folder
+	 */
+	public static String generateUniqueName(String name, String contentType) {
+		return transcode(name, new QuotedPrintableEncoder(QuotedPrintableEncoding.ALL)) + "." + UUID.randomUUID().toString() + "." + ContentTypeMap.getInstance().getExtensionFor(contentType);
+	}
+
+	public static String transcode(String name, Transcoder<ByteBuffer> transcoder) {
+		try {
+			byte[] bytes = IOUtils.toBytes(TranscoderUtils.transcodeBytes(IOUtils.wrap(name.getBytes(Charset.forName("UTF-8")), true), transcoder));
+			return new String(bytes, "UTF-8");
+		}
+		catch (IOException e) {
+			throw new RuntimeException("Could not encode name: " + name, e);
 		}
 	}
 }
