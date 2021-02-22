@@ -76,7 +76,8 @@ public class TritonShell {
 				// we might need the key to install it
 				SSLContext context = TritonLocalConsole.getContext();
 				// make sure we already trust the target server
-				String host = url.getHost() == null ? "localhost" : url.getHost();
+				// if you do something like "host=target" without the scheme, the "target" value will be in the path, not in the host
+				String host = url.getHost() == null ? url.getPath() : url.getHost();
 				int port = url.getPort() < 0 ? securePort : url.getPort();
 				X509Certificate[] chain = SecurityUtils.getChain(host, port, SSLContextType.TLS);
 				KeyStoreHandler keystore = TritonLocalConsole.getAuthenticationKeystore();

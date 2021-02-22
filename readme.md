@@ -1,5 +1,46 @@
 # TODO
 
+Should perhaps store "servers" in different keystore from "profiles"?
+Otherwise, by connecting to a server, you also automatically give it access to connect to your machine?
+Although this is (by default) in .triton-server and .triton-client respectively...
+So maybe it's just fine.
+
+
+remember the servers, if you start the client with -prompt or whatever
+-> we list the servers and you choose
+
+
+
+it's hard to print the "self" if you can't initially connect to the server
+combine this with not wanting to remember the profile etc?
+-> perhaps you start up client, select a profile
+-> based on that profile you get a list of servers you have previously connected to
+
+
+
+-> show the actual server at the top (permanently?) rather than just the version of the triton server
+
+have a "request access"? basically it just stores the crt in a request folder
+-> can disable this in triton server (to prevent spamming)
+-> can easily accept or reject proposals
+-> rejected are also kept so we can keep track of rejections?
+
+
+## Multiple Versions of Packages
+
+This is primarily aimed at deployments etc where multiple versions can coexist and we can switch between them simply by relinking.
+
+when scanning packages we can have the same package multiple times (different versions that is)
+we need to know which one is active?
+-> the folder structure will be <module>/<version> so based on the symbolic link we know which version is active
+-> the other packages are not in the "installed" list nor active (from scripts perspective)
+-> but you can ask for "alternatives" to an installed package which will list the available alternative installations
+-> you can then "activate" an alternative.
+
+when installing a package
+-> 
+
+
 - we now have package verification, we need to be able to create packages
 	-> do this using triton itself
 	-> create a package from a directory or sign an existing zip file

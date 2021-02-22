@@ -1,10 +1,12 @@
 package be.nabu.libs.triton;
 
+import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.ByteArrayInputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
 import java.security.GeneralSecurityException;
@@ -53,6 +55,7 @@ public class Triton {
 
 	public Map<PackageDescription, ResourceContainer<?>> packages;
 	private TritonGlueEngine glue;
+	private Properties properties;
 	
 	public void start() {
 		glue = new TritonGlueEngine(this, getScriptContainers().toArray(new ResourceContainer[0]));
@@ -558,6 +561,39 @@ public class Triton {
 		}
 		catch (IOException e) {
 			throw new RuntimeException("Could not encode name: " + name, e);
+		}
+	}
+	
+	public Properties getConfiguration() {
+		if (properties == null) {
+			synchronized(this) {
+				if (properties == null) {
+					Properties properties = new Properties();
+					File file = new File(getFolder(), "triton.properties");
+					if (file.exists()) {
+						try (InputStream input = new BufferedInputStream(new FileInputStream(file))) {
+							properties.load(input);
+						}
+						catch (Exception e) {
+							throw new RuntimeException(e);
+						}
+					}
+					this.properties = properties;
+				}
+			}
+		}
+		return properties;
+	}
+	
+	public void setConfiguration(Properties properties) {
+		File file = new File(getFolder(), "triton.properties");
+		if (file.exists()) {
+			try (OutputStream output = new BufferedOutputStream(new FileOutputStream(file))) {
+				properties.store(output, null);
+			}
+			catch (Exception e) {
+				throw new RuntimeException(e);
+			}
 		}
 	}
 }

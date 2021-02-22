@@ -25,6 +25,7 @@ import java.util.Properties;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
+import be.nabu.glue.annotations.GlueParam;
 import be.nabu.glue.core.impl.methods.FileMethods;
 import be.nabu.libs.evaluator.annotations.MethodProviderClass;
 import be.nabu.libs.resources.ResourceUtils;
@@ -351,5 +352,28 @@ public class TritonMethods {
 			keystore.delete("user-" + alias);
 			TritonLocalConsole.savePackaging(keystore);
 		}
+	}
+	
+	// this is basically an extension of input
+	// it asks the user for input, once, then stores it as configuration and the next time it will not prompt the user but instead feed the configured value
+	// if we have a default value, the user must accept it, but it will be stored from that point on
+	// we don't want to bother the user with an interaction at every turn
+	public String configure(@GlueParam(name = "key") String key, @GlueParam(name = "default") String defaultValue, @GlueParam(name = "secret") Boolean secret, @GlueParam(name = "force") Boolean force) throws IOException {
+		Properties configuration = triton.getConfiguration();
+		if (configuration.getProperty(key) == null || (force != null && force)) {
+			TritonConsoleInstance console = TritonLocalConsole.getConsole();
+			if (console != null && console.getInputProvider() != null) {
+				String result = console.getInputProvider().input("Initialize environment configuration '" + key + "'" + (defaultValue == null ? "" : " [" + defaultValue + "]") + ": ", secret != null && secret, defaultValue);
+				if (result == null || result.trim().isEmpty()) {
+					result = defaultValue;
+				}
+				if (result != null && !result.trim().isEmpty()) {
+					configuration.setProperty(key, result.trim());
+					triton.setConfiguration(configuration);
+					return result.trim();
+				}
+			}
+		}
+		return configuration.getProperty(key);
 	}
 }
