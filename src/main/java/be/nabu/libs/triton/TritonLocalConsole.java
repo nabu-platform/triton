@@ -19,6 +19,7 @@ import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.nio.charset.Charset;
 import java.security.KeyPair;
+import java.security.KeyStore;
 import java.security.PrivateKey;
 import java.security.SecureRandom;
 import java.security.UnrecoverableKeyException;
@@ -214,7 +215,6 @@ public class TritonLocalConsole {
 						sslSocket.setNeedClientAuth(clientAuth);
 						while (running && !sslSocket.isClosed()) {
 							SSLSocket accept = (SSLSocket) sslSocket.accept();
-							System.out.println("accepted: " + accept);
 							// because we don't require authentication, it _must_ come from a local address to ensure you have access
 							// in the future we can expand upon this with some authentication scheme
 							if (!clientAuth && !isLocal(accept.getInetAddress())) {
@@ -227,6 +227,7 @@ public class TritonLocalConsole {
 									start(source);
 								}
 								else {
+									System.out.println("Closing untrusted");
 									accept.close();
 								}
 							}
@@ -332,7 +333,13 @@ public class TritonLocalConsole {
 					savePackaging(keystore);
 				}
 			}
-			KeyManager[] keyManagers = keystore.getKeyManagers(keyPassword);
+			
+			// because passwords are (likely) different cross keys and it does not seem to be possible to indicate the correct key when creating the key managers...
+			// we just create a new store that only has one key
+			KeyStoreHandler singleKey = KeyStoreHandler.create("test", StoreType.JKS);
+			singleKey.set(profile, privateKey, keystore.getPrivateKeys().get(profile), keyPassword);
+			
+			KeyManager[] keyManagers = singleKey.getKeyManagers(keyPassword);
 			for (int i = 0; i < keyManagers.length; i++) {
 				if (keyManagers[i] instanceof X509KeyManager) {
 					keyManagers[i] = new AliasKeyManager((X509KeyManager) keyManagers[i], profile);

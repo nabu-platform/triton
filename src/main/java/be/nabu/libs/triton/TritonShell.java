@@ -17,6 +17,7 @@ import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -186,22 +187,21 @@ public class TritonShell {
 						.build();
 				
 				// once successfully connected, make sure we save the host for future use in the profile
-				Properties configuration = Triton.getConfiguration();
-				
-				String chosenHost = System.getProperty("triton.host", System.getProperty("host"));
-				String hostKey = "hosts." + TritonLocalConsole.getProfile();
-				String hosts = configuration.getProperty(hostKey);
-				if (hosts == null) {
-					hosts = chosenHost;
-				}
-				// not yet stored
-				else if (!Arrays.asList(hosts.split("[\\s]*,[\\s]*")).contains(chosenHost)) {
-					hosts += "," + chosenHost;
-				}
-				if (!hosts.equals(configuration.getProperty(hostKey))) {
-					configuration.setProperty(hostKey, hosts);
-					Triton.setConfiguration(configuration);
-				}
+//				Properties configuration = Triton.getConfiguration();
+//				String chosenHost = System.getProperty("triton.host", System.getProperty("host"));
+//				String hostKey = "hosts." + TritonLocalConsole.getProfile();
+//				String hosts = configuration.getProperty(hostKey);
+//				if (hosts == null) {
+//					hosts = chosenHost;
+//				}
+//				// not yet stored
+//				else if (!Arrays.asList(hosts.split("[\\s]*,[\\s]*")).contains(chosenHost)) {
+//					hosts += "," + chosenHost;
+//				}
+//				if (!hosts.equals(configuration.getProperty(hostKey))) {
+//					configuration.setProperty(hostKey, hosts);
+//					Triton.setConfiguration(configuration);
+//				}
 				
 				
 				String ending = "//the--end//";
@@ -384,6 +384,22 @@ public class TritonShell {
 		}
 	}
 	
+	private static void persistHostChoice(String key, String chosen, String...hosts) {
+		ArrayList<String> arrayList = new ArrayList<String>(Arrays.asList(hosts));
+		arrayList.remove(chosen);
+		arrayList.add(0, chosen);
+		String result = "";
+		for (String single : arrayList) {
+			if (!result.isEmpty()) {
+				result += ", ";
+			}
+			result += single;
+		}
+		Properties configuration = Triton.getConfiguration();
+		configuration.setProperty(key, result);
+		Triton.setConfiguration(configuration);
+	}
+	
 	private static void chooseHost() throws IOException {
 		String host = System.getProperty("triton.host", System.getProperty("host"));
 		String profile = TritonLocalConsole.getProfile();
@@ -413,6 +429,7 @@ public class TritonShell {
 					int choice = Integer.parseInt(result);
 					if (choice - 1 < split.length && choice >= 1) {
 						System.setProperty("triton.host", split[choice - 1]);
+						persistHostChoice("hosts." + profile, split[choice - 1], split);
 						return;
 					}
 					else if (choice == split.length + 1) {
@@ -453,6 +470,7 @@ public class TritonShell {
 				// we assume you typed a new one
 				else {
 					System.setProperty("triton.host", result);
+					persistHostChoice("hosts." + profile, result, split);
 				}
 			}
 			else {
@@ -491,7 +509,26 @@ public class TritonShell {
 				}
 				else {
 					System.out.println("Available profiles: \n");
-					Collections.sort(profiles);
+					Properties configuration = Triton.getConfiguration();
+					String usedProfiles = configuration.getProperty("profiles");
+					if (usedProfiles != null && !usedProfiles.trim().isEmpty()) {
+						List<String> profileList = new ArrayList<String>(Arrays.asList(usedProfiles.split("[\\s]*,[\\s]*")));
+						Iterator<String> iterator = profileList.iterator();
+						// remove profiles that are no longer valid
+						while (iterator.hasNext()) {
+							if (!profiles.contains(iterator.next())) {
+								iterator.remove();
+							}
+						}
+						// add new ones at the back
+						for (String single : profiles) {
+							if (!profileList.contains(single)) {
+								profileList.add(single);
+							}
+						}
+						profiles = profileList;
+					}
+					
 					for (String profile : profiles) {
 						System.out.println(i++ + ") " + profile + " [" + TritonLocalConsole.getAlias(privateKeys.get(profile)[0]) + "]");
 					}
@@ -587,6 +624,18 @@ public class TritonShell {
 							return;
 						}
 						System.setProperty("triton.profile", profiles.get(profileIndex - 1));
+						// move to the front of the line
+						profiles.remove(System.getProperty("triton.profile"));
+						profiles.add(0, System.getProperty("triton.profile"));
+						String profileStringified = "";
+						for (String single : profiles) {
+							if (!profileStringified.isEmpty()) {
+								profileStringified += ", ";
+							}
+							profileStringified += single;
+						}
+						configuration.setProperty("profiles", profileStringified);
+						Triton.setConfiguration(configuration);
 					}
 					else {
 						// we search an exact match first

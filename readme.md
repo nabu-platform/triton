@@ -6,18 +6,6 @@ Although this is (by default) in .triton-server and .triton-client respectively.
 So maybe it's just fine.
 
 
-remember the servers, if you start the client with -prompt or whatever
--> we list the servers and you choose
-
-
-
-it's hard to print the "self" if you can't initially connect to the server
-combine this with not wanting to remember the profile etc?
--> perhaps you start up client, select a profile
--> based on that profile you get a list of servers you have previously connected to
-
-
-
 -> show the actual server at the top (permanently?) rather than just the version of the triton server
 
 have a "request access"? basically it just stores the crt in a request folder
