@@ -55,7 +55,7 @@ public class Triton {
 
 	public Map<PackageDescription, ResourceContainer<?>> packages;
 	private TritonGlueEngine glue;
-	private Properties properties;
+	private static Properties properties;
 	
 	public void start() {
 		glue = new TritonGlueEngine(this, getScriptContainers().toArray(new ResourceContainer[0]));
@@ -564,9 +564,9 @@ public class Triton {
 		}
 	}
 	
-	public Properties getConfiguration() {
+	public static Properties getConfiguration() {
 		if (properties == null) {
-			synchronized(this) {
+			synchronized(Triton.class) {
 				if (properties == null) {
 					Properties properties = new Properties();
 					File file = new File(getFolder(), "triton.properties");
@@ -578,22 +578,20 @@ public class Triton {
 							throw new RuntimeException(e);
 						}
 					}
-					this.properties = properties;
+					Triton.properties = properties;
 				}
 			}
 		}
 		return properties;
 	}
 	
-	public void setConfiguration(Properties properties) {
+	public static void setConfiguration(Properties properties) {
 		File file = new File(getFolder(), "triton.properties");
-		if (file.exists()) {
-			try (OutputStream output = new BufferedOutputStream(new FileOutputStream(file))) {
-				properties.store(output, null);
-			}
-			catch (Exception e) {
-				throw new RuntimeException(e);
-			}
+		try (OutputStream output = new BufferedOutputStream(new FileOutputStream(file))) {
+			properties.store(output, null);
+		}
+		catch (Exception e) {
+			throw new RuntimeException(e);
 		}
 	}
 }

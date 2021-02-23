@@ -358,8 +358,8 @@ public class TritonMethods {
 	// it asks the user for input, once, then stores it as configuration and the next time it will not prompt the user but instead feed the configured value
 	// if we have a default value, the user must accept it, but it will be stored from that point on
 	// we don't want to bother the user with an interaction at every turn
-	public String configure(@GlueParam(name = "key") String key, @GlueParam(name = "default") String defaultValue, @GlueParam(name = "secret") Boolean secret, @GlueParam(name = "force") Boolean force) throws IOException {
-		Properties configuration = triton.getConfiguration();
+	public String environment(@GlueParam(name = "key") String key, @GlueParam(name = "default") String defaultValue, @GlueParam(name = "force") Boolean force, @GlueParam(name = "secret") Boolean secret) throws IOException {
+		Properties configuration = Triton.getConfiguration();
 		if (configuration.getProperty(key) == null || (force != null && force)) {
 			TritonConsoleInstance console = TritonLocalConsole.getConsole();
 			if (console != null && console.getInputProvider() != null) {
@@ -369,7 +369,7 @@ public class TritonMethods {
 				}
 				if (result != null && !result.trim().isEmpty()) {
 					configuration.setProperty(key, result.trim());
-					triton.setConfiguration(configuration);
+					Triton.setConfiguration(configuration);
 					return result.trim();
 				}
 			}

@@ -1,7 +1,9 @@
 package be.nabu.libs.triton.impl;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Reader;
 import java.io.Writer;
@@ -77,5 +79,25 @@ public class ConsoleSocketSource implements ConsoleSource {
 			// ignore
 		}
 		return null;
+	}
+
+	@Override
+	public InputStream getInputStream() {
+		try {
+			return socket.getInputStream();
+		}
+		catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	@Override
+	public OutputStream getOutputStream() {
+		try {
+			return socket.getOutputStream();
+		}
+		catch (IOException e) {
+			throw new RuntimeException(e);
+		}
 	}
 }

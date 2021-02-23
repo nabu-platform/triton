@@ -6,12 +6,20 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.io.PipedInputStream;
 import java.io.StringWriter;
 import java.net.Socket;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.security.KeyStoreException;
+import java.security.cert.CertificateEncodingException;
 import java.security.cert.X509Certificate;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 
 import javax.net.ssl.SSLContext;
 
@@ -19,6 +27,8 @@ import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
 import org.jline.reader.impl.DefaultParser;
 import org.jline.terminal.Terminal;
+import org.jline.terminal.Terminal.Signal;
+import org.jline.terminal.Terminal.SignalHandler;
 import org.jline.terminal.TerminalBuilder;
 import org.jline.utils.AttributedString;
 import org.jline.utils.AttributedStyle;
@@ -52,12 +62,23 @@ public class TritonShell {
 		return builder.toString();
 	}
 	
-	public static void main(String...args) throws URISyntaxException {
+	private static boolean running;
+	private static int runningKill;
+	
+	public static void main(String...args) throws URISyntaxException, IOException {
 		Main.systemPropertify(args);
+		
+		// make sure the user chooses a profile
+		chooseProfile();
+		
+		// and a host
+		chooseHost();
+		
 		// the connection string
 		// e.g. ts://localhost:5000, the protocol stands for "triton shell" or "triton socket"
 		// secure is for example sts://localhost:5100 -> sts: secure triton shell
-		URI url = new URI(System.getProperty("triton.host", System.getProperty("host", "ts://localhost")));
+		String tritonHost = System.getProperty("triton.host", System.getProperty("host", "ts://localhost"));
+		URI url = new URI(tritonHost);
 		try {
 			Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
 				@Override
@@ -127,15 +148,61 @@ public class TritonShell {
 				thread.setDaemon(true);
 				thread.start();
 				
+				BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), "UTF-8"));
+				BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), "UTF-8"));
+				
 				Terminal terminal = TerminalBuilder.builder()
 						.name("Triton v" + Main.VERSION)
-						.signalHandler(Terminal.SignalHandler.SIG_IGN)
+//						.signalHandler(Terminal.SignalHandler.SIG_IGN)
+						.signalHandler(new SignalHandler() {
+							@Override
+							public void handle(Signal arg0) {
+								if (running) {
+									try {
+										writer.write("^SIGINT\n");
+										writer.flush();
+									}
+									catch (IOException e) {
+										e.printStackTrace();
+									}
+									runningKill++;
+									if (runningKill >= 3) {
+										try {
+											socket.close();
+										}
+										catch (IOException e) {
+											// ignore
+										}
+										System.exit(1);
+									}
+								}
+								else {
+									Terminal.SignalHandler.SIG_IGN.handle(arg0);
+								}
+							}
+						})
 						.nativeSignals(true)
 						//			.attributes(termAttribs)
 						.build();
 				
-				BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), "UTF-8"));
-				BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), "UTF-8"));
+				// once successfully connected, make sure we save the host for future use in the profile
+				Properties configuration = Triton.getConfiguration();
+				
+				String chosenHost = System.getProperty("triton.host", System.getProperty("host"));
+				String hostKey = "hosts." + TritonLocalConsole.getProfile();
+				String hosts = configuration.getProperty(hostKey);
+				if (hosts == null) {
+					hosts = chosenHost;
+				}
+				// not yet stored
+				else if (!Arrays.asList(hosts.split("[\\s]*,[\\s]*")).contains(chosenHost)) {
+					hosts += "," + chosenHost;
+				}
+				if (!hosts.equals(configuration.getProperty(hostKey))) {
+					configuration.setProperty(hostKey, hosts);
+					Triton.setConfiguration(configuration);
+				}
+				
 				
 				String ending = "//the--end//";
 				String inputEnding = "//request--input//";
@@ -204,11 +271,8 @@ public class TritonShell {
 				// we could get rid of the space but then we need a proper prompt here, which will interfere with the prompt via telnet so we would have to cripple the straight-to-telnet shizzle
 				while ((line = consoleReader.readLine("$ ")) != null) {
 					if (line.equals("self")) {
-						X509Certificate certificate = TritonLocalConsole.getAuthenticationKeystore().getCertificate(TritonLocalConsole.getProfile());
-						StringWriter certWriter = new StringWriter();
-						SecurityUtils.encodeCertificate(certificate, certWriter);
-						certWriter.flush();
-						terminal.writer().println(certWriter.toString());
+						String certWriter = encodeCert();
+						terminal.writer().println(certWriter);
 						terminal.writer().flush();
 						continue;
 					}
@@ -241,6 +305,7 @@ public class TritonShell {
 					if (line.equals("exit")) {
 						break;
 					}
+					running = true;
 					// we need to send line by line so we can read the response
 					String[] split = line.split("\n");
 					for (int i = 0; i < split.length; i++) {
@@ -270,6 +335,8 @@ public class TritonShell {
 							}
 						}
 					}
+					running = false;
+					runningKill = 0;
 				}
 			}
 			catch (Exception e) {
@@ -289,6 +356,264 @@ public class TritonShell {
 		}
 		catch (Exception e) {
 			System.out.println("Could not connect to Triton agent, are you sure it is running?");
+		}
+	}
+
+	private static String encodeCert() throws KeyStoreException, CertificateEncodingException, IOException {
+		X509Certificate certificate = TritonLocalConsole.getAuthenticationKeystore().getCertificate(TritonLocalConsole.getProfile());
+		return encodeCert(certificate);
+	}
+
+	private static String encodeCert(X509Certificate certificate) throws CertificateEncodingException, IOException {
+		StringWriter certWriter = new StringWriter();
+		SecurityUtils.encodeCertificate(certificate, certWriter);
+		certWriter.flush();
+		return certWriter.toString();
+	}
+
+	private static void createProfile() throws IOException {
+		StandardInputProvider standardInputProvider = new StandardInputProvider();
+		String input = standardInputProvider.input("New profile name: ", false, null);
+		if (input == null || input.trim().isEmpty()) {
+			System.out.println("Please provide a profile name");
+			createProfile();
+		}
+		else {
+			input = input.replaceAll("[^\\w]+", "-");
+			System.setProperty("triton.profile", input);
+		}
+	}
+	
+	private static void chooseHost() throws IOException {
+		String host = System.getProperty("triton.host", System.getProperty("host"));
+		String profile = TritonLocalConsole.getProfile();
+		if (profile == null) {
+			chooseProfile();
+			profile = TritonLocalConsole.getProfile();
+		}
+		if (host == null) {
+			StandardInputProvider standardInputProvider = new StandardInputProvider();
+			
+			Properties configuration = Triton.getConfiguration();
+			String hosts = configuration.getProperty("hosts." + profile);
+			if (hosts != null) {
+				System.out.println();
+				System.out.println("Available hosts:");
+				System.out.println();
+				int i = 1;
+				String[] split = hosts.split("[\\s]*,[\\s]*");
+				for (String single : split) {
+					System.out.println(i++ + ") " + single);
+				}
+				System.out.println(i++ + ") Remove host");
+//				System.out.println(i++ + ") Exit");
+				System.out.println();
+				String result = standardInputProvider.input("Choose host or enter a new one [" + split[0] + "]: ", false, "1");
+				if (result.matches("^[0-9]+$")) {
+					int choice = Integer.parseInt(result);
+					if (choice - 1 < split.length && choice >= 1) {
+						System.setProperty("triton.host", split[choice - 1]);
+						return;
+					}
+					else if (choice == split.length + 1) {
+						result = standardInputProvider.input("Host to remove: ", false, null);
+						if (result.matches("^[0-9]+$")) {
+							choice = Integer.parseInt(result);
+							if (choice - 1 < split.length) {
+								List<String> list = new ArrayList<String>(Arrays.asList(split));
+								list.remove(choice - 1);
+								if (list.isEmpty()) {
+									configuration.remove("hosts." + profile);
+								}
+								else {
+									String builder = "";
+									for (String single : list) {
+										if (!builder.isEmpty()) {
+											builder += ",";
+										}
+										builder += single;
+									}
+									configuration.setProperty("hosts." + profile, builder);
+								}
+								Triton.setConfiguration(configuration);
+							}
+						}
+						chooseHost();
+						return;
+					}
+					else if (choice == split.length + 2) {
+						System.exit(1);
+					}
+					else {
+						System.out.println("Invalid choice");
+						chooseHost();
+						return;
+					}
+				}
+				// we assume you typed a new one
+				else {
+					System.setProperty("triton.host", result);
+				}
+			}
+			else {
+				System.out.println();
+				String input = standardInputProvider.input("Enter the host url [ts://localhost]: ", false, "ts://localhost");
+				if (input != null && !input.trim().isEmpty()) {
+					System.setProperty("triton.host", input);
+					return;
+				}
+				else {
+					System.out.println("Please enter a valid host url");
+					chooseHost();
+					return;
+				}
+			}
+		}
+	}
+	
+	private static void chooseProfile() {
+		String chosenProfile = System.getProperty("triton.profile", System.getProperty("profile"));
+		// choose a profile if not chosen
+		if (chosenProfile == null) {
+			StandardInputProvider standardInputProvider = new StandardInputProvider();
+			KeyStoreHandler authenticationKeystore = TritonLocalConsole.getAuthenticationKeystore();
+			int i = 1;
+			try {
+				List<String> profiles = new ArrayList<String>();
+				Map<String, X509Certificate[]> privateKeys = authenticationKeystore.getPrivateKeys();
+				for (Map.Entry<String, X509Certificate[]> entry : privateKeys.entrySet()) {
+					profiles.add(entry.getKey());
+				}
+				// no profile yet, invite to create one
+				if (profiles.isEmpty()) {
+					System.out.println("You do not have a profile yet, let's create one");
+					createProfile();
+				}
+				else {
+					System.out.println("Available profiles: \n");
+					Collections.sort(profiles);
+					for (String profile : profiles) {
+						System.out.println(i++ + ") " + profile + " [" + TritonLocalConsole.getAlias(privateKeys.get(profile)[0]) + "]");
+					}
+					System.out.println(i++ + ") Create new profile");
+					System.out.println(i++ + ") Remove existing profile");
+					System.out.println(i++ + ") Print certificate");
+//					System.out.println(i++ + ") Exit");
+					System.out.println();
+					String input = standardInputProvider.input("Choose profile [" + profiles.get(0) + "]: ", false, "1");
+					// chosen by number
+					if (input.matches("^[0-9]+$")) {
+						int profileIndex = Integer.parseInt(input);
+						if (profileIndex == profiles.size() + 1) {
+							createProfile();
+							return;
+						}
+						else if (profileIndex == profiles.size() + 2) {
+							input = standardInputProvider.input("Choose profile to remove: ", false, null);
+							if (input == null || input.trim().isEmpty()) {
+								chooseProfile();
+								return;
+							}
+							else {
+								String profileToRemove;
+								if (input.matches("^[0-9]+$")) {
+									profileIndex = Integer.parseInt(input);
+									if (profileIndex - 1 >= profiles.size() || profileIndex < 1) {
+										System.out.println("Invalid profile choice");
+										chooseProfile();
+										return;	
+									}
+									else {
+										profileToRemove = profiles.get(profileIndex - 1);										
+									}
+								}
+								else if (profiles.contains(input)) {
+									profileToRemove = input;
+								}
+								else {
+									System.out.println("Invalid profile choice");
+									chooseProfile();
+									return;
+								}
+								authenticationKeystore.delete(profileToRemove);
+								TritonLocalConsole.saveAuthentication(authenticationKeystore);
+								System.out.println("Profile successfully removed");
+								chooseProfile();
+								return;
+							}
+						}
+						// print the cert
+						else if (profileIndex == profiles.size() + 3) {
+							System.out.println();
+							input = standardInputProvider.input("Choose profile to print: ", false, null);
+							if (input == null || input.trim().isEmpty()) {
+								chooseProfile();
+								return;
+							}
+							else {
+								String profileToPrint;
+								if (input.matches("^[0-9]+$")) {
+									profileIndex = Integer.parseInt(input);
+									if (profileIndex - 1 >= profiles.size() || profileIndex < 1) {
+										System.out.println("Invalid profile choice");
+										chooseProfile();
+										return;	
+									}
+									else {
+										profileToPrint = profiles.get(profileIndex - 1);										
+									}
+								}
+								else if (profiles.contains(input)) {
+									profileToPrint = input;
+								}
+								else {
+									System.out.println("Invalid profile choice");
+									chooseProfile();
+									return;
+								}
+								X509Certificate[] x509Certificates = authenticationKeystore.getPrivateKeys().get(profileToPrint);
+								System.out.println();
+								System.out.println(encodeCert(x509Certificates[0]));
+								chooseProfile();
+								return;
+							}
+						}
+						else if (profileIndex == profiles.size() + 4) {
+							System.exit(0);
+						}
+						else if (profileIndex - 1 >= profiles.size() || profileIndex < 1) {
+							System.out.println("Invalid profile choice");
+							chooseProfile();
+							return;
+						}
+						System.setProperty("triton.profile", profiles.get(profileIndex - 1));
+					}
+					else {
+						// we search an exact match first
+						if (profiles.contains(input)) {
+							System.setProperty("triton.profile", input);	
+						}
+						// otherwise we look for the first partial match
+						else {
+							boolean found = false;
+							for (String potential : profiles) {
+								if (potential.toLowerCase().contains(input.toLowerCase())) {
+									System.setProperty("triton.profile", potential);
+									found = true;
+									break;
+								}
+							}
+							if (!found) {
+								System.out.println("Invalid profile choice");
+								System.exit(0);
+							}
+						}
+					}
+				}
+			}
+			catch (Exception e) {
+				throw new RuntimeException(e);
+			}
 		}
 	}
 	

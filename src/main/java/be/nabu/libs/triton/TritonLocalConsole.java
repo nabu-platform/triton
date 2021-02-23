@@ -42,6 +42,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import be.nabu.glue.api.InputProvider;
+import be.nabu.glue.api.StreamProvider;
 import be.nabu.glue.core.impl.executors.EvaluateExecutor;
 import be.nabu.glue.impl.SimpleExecutionEnvironment;
 import be.nabu.glue.impl.StandardInputProvider;
@@ -213,6 +214,7 @@ public class TritonLocalConsole {
 						sslSocket.setNeedClientAuth(clientAuth);
 						while (running && !sslSocket.isClosed()) {
 							SSLSocket accept = (SSLSocket) sslSocket.accept();
+							System.out.println("accepted: " + accept);
 							// because we don't require authentication, it _must_ come from a local address to ensure you have access
 							// in the future we can expand upon this with some authentication scheme
 							if (!clientAuth && !isLocal(accept.getInetAddress())) {
@@ -292,7 +294,7 @@ public class TritonLocalConsole {
 		}
 		if (key == null) {
 			try {
-				key = new StandardInputProvider().input("Enter key password: ", true, null);
+				key = new StandardInputProvider().input("Enter key password for profile '" + getProfile() + "': ", true, null);
 				rememberedKeyPassword = key;
 			}
 			catch (IOException e) {
@@ -430,7 +432,7 @@ public class TritonLocalConsole {
 	
 	// TODO: we probably need a way to negotiate non-interaction mode
 	// you want to be able to run unsupervised management scripts
-	private void start(ConsoleSource source) {
+	public void start(ConsoleSource source) {
 		threadPool.submit(new Runnable() {
 			private String responseEnd, inputEnd, passwordEnd;
 			
@@ -516,6 +518,21 @@ public class TritonLocalConsole {
 					};
 					instance.setInputProvider(inputProvider);
 					
+					StreamProvider streamProvider = new StreamProvider() {
+						@Override
+						public OutputStream getErrorStream() {
+							return source.getOutputStream();
+						}
+						@Override
+						public OutputStream getOutputStream() {
+							return source.getOutputStream();
+						}
+						@Override
+						public InputStream getInputStream() {
+							return source.getInputStream();
+						}
+					};
+					
 					responseEnd = "";
 					inputEnd = "";
 					passwordEnd = "";
@@ -580,6 +597,7 @@ public class TritonLocalConsole {
 								ScriptRuntime scriptRuntime = new ScriptRuntime(virtualScript, runtime.getExecutionContext(), null);
 								scriptRuntime.setFormatter(simpleOutputFormatter);
 								scriptRuntime.setInputProvider(inputProvider);
+								scriptRuntime.setStreamProvider(streamProvider);
 								scriptRuntime.run();
 								script.append(buffered).append("\n");
 								buffered.delete(0, buffered.toString().length());

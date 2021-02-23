@@ -271,6 +271,27 @@ You can write the signed package to the file system and distribute it however yo
 
 When you try to install a package that belongs to an author you do not yet trust, you can choose to trust the author.
 
+# Interactive system commands
+
+Some system commands like ``tail -f`` stay open until you kill them.
+
+This means two things:
+
+- we need to stream the output of the tail command continuously to the triton client
+- the triton client must be able to signal the triton server to kill the process
+
+The first requirement is not too hard but the second required a bit of creative problem solving...
+
+The triton terminal will intercept kill signals and check if it is waiting for anything on the remote server. If so, it will not signal local kill but instead send a predetermined fixed string to the triton server.
+
+The triton server will be on the lookout for that particular string and will terminate the process if it finds that. Any other content (apart from the signal) is sent to the process.
+
+This is not ideal and can cause edge cases where the signal arrives in multiple pieces and is not recognized as such, or the process is killed without having processed all the input before the signal.
+
+The triton server is also mixing the input and output of the socket in a number of scenario's, which should be OK in a single threaded environment but may lead to an I/O deadlock in case of multithreaded access or an unforeseen edge case.
+
+As an additional failsafe, if you send a kill signal three times while it is in running mode, the terminal will exit, assuming it can't properly close down the process. This should kill the entire session on the triton server side as well.
+
 # Name
 
 Triton is the messenger of the sea god Poseidon.
