@@ -64,6 +64,28 @@
 		</dependency>
 		
 		<dependency>
+			<groupId>be.nabu.libs.evaluator</groupId>
+			<artifactId>evaluator-types</artifactId>
+		</dependency>
+		
+		<dependency>
+			<groupId>be.nabu.glue</groupId>
+			<artifactId>glue-integrator</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>be.nabu.glue</groupId>
+			<artifactId>glue-json</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>be.nabu.glue</groupId>
+			<artifactId>glue-xml</artifactId>
+		</dependency>
+		<dependency>
+			<groupId>be.nabu.glue</groupId>
+			<artifactId>glue-types</artifactId>
+		</dependency>
+		
+		<dependency>
 			<groupId>be.nabu.libs.http</groupId>
 			<artifactId>http-client</artifactId>
 		</dependency>
@@ -121,6 +143,29 @@
 		    <groupId>com.github.oshi</groupId>
 		    <artifactId>oshi-core</artifactId>
 		    <version>5.3.7</version>
+		</dependency>
+		
+		<dependency>
+			<groupId>ch.qos.logback</groupId>
+			<artifactId>logback-classic</artifactId>
+			<version>1.2.3</version>
+		</dependency>
+		
+		<!-- always the same thing... -->
+		<dependency>
+			<groupId>javax.xml.bind</groupId>
+			<artifactId>jaxb-api</artifactId>
+			<version>2.3.1</version>
+		</dependency>
+		<dependency>
+			<groupId>com.sun.xml.bind</groupId>
+			<artifactId>jaxb-impl</artifactId>
+			<version>2.3.1</version>
+		</dependency>
+		<dependency>
+			<groupId>com.sun.xml.bind</groupId>
+			<artifactId>jaxb-core</artifactId>
+			<version>2.3.0</version>
 		</dependency>
 	</dependencies>
 

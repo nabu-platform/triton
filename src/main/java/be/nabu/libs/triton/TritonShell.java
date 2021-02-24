@@ -5,6 +5,7 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.PipedInputStream;
 import java.io.StringWriter;
@@ -150,7 +151,9 @@ public class TritonShell {
 				thread.start();
 				
 				BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), "UTF-8"));
-				BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(socket.getOutputStream(), "UTF-8"));
+				OutputStream outputStream = socket.getOutputStream();
+				OutputStreamWriter outputStreamWriter = new OutputStreamWriter(outputStream, "UTF-8");
+				BufferedWriter writer = new BufferedWriter(outputStreamWriter);
 				
 				Terminal terminal = TerminalBuilder.builder()
 						.name("Triton v" + Main.VERSION)
@@ -159,6 +162,7 @@ public class TritonShell {
 							@Override
 							public void handle(Signal arg0) {
 								if (running) {
+									System.out.println("sending sigint");
 									try {
 										writer.write("^SIGINT\n");
 										writer.flush();

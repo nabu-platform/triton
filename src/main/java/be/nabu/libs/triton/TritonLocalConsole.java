@@ -9,6 +9,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.PrintWriter;
 import java.net.InetAddress;
@@ -55,6 +56,7 @@ import be.nabu.libs.authentication.api.Token;
 import be.nabu.libs.authentication.impl.BasicPrincipalImpl;
 import be.nabu.libs.triton.api.ConsoleSource;
 import be.nabu.libs.triton.impl.ConsoleSocketSource;
+import be.nabu.utils.io.blocking.DeblockingInputStream;
 import be.nabu.utils.security.AliasKeyManager;
 import be.nabu.utils.security.BCSecurityUtils;
 import be.nabu.utils.security.KeyPairType;
@@ -150,6 +152,8 @@ public class TritonLocalConsole {
 	}
 	
 	public void start() {
+		runWarmup();
+		
 		running = true;
 		Thread unsecureThread = new Thread(new Runnable() {
 			@Override
@@ -227,7 +231,6 @@ public class TritonLocalConsole {
 									start(source);
 								}
 								else {
-									System.out.println("Closing untrusted");
 									accept.close();
 								}
 							}
@@ -437,6 +440,30 @@ public class TritonLocalConsole {
 		return console.get();
 	}
 	
+	// some method providers might need some warmup (e.g. integrator)
+	private void runWarmup() {
+		try {
+			System.out.println("Warming up method providers...");
+			SimpleExecutionEnvironment environment = new SimpleExecutionEnvironment("default");
+			environment.getParameters().put(EvaluateExecutor.DEFAULT_VARIABLE_NAME_PARAMETER, "$tmp");
+			
+			DynamicScript dynamicScript = new DynamicScript(
+				engine.getRepository(), 
+				engine.getRepository().getParserProvider().newParser(engine.getRepository(), "dynamic.glue"),
+				"console('Warm-up complete')");
+			
+			ScriptRuntime runtime = new ScriptRuntime(dynamicScript, 
+				environment, 
+				false, 
+				null
+			);
+			runtime.run();
+		}
+		catch (Exception e) {
+			e.printStackTrace();
+		}
+	}
+	
 	// TODO: we probably need a way to negotiate non-interaction mode
 	// you want to be able to run unsupervised management scripts
 	public void start(ConsoleSource source) {
@@ -487,10 +514,13 @@ public class TritonLocalConsole {
 					
 					runtime.registerInThread();
 					
+					DeblockingInputStream input = new DeblockingInputStream(source.getInputStream());
+					InputStream main = input.newInputStream();
+					
 					// TODO: token?
 					StringBuilder buffered = new StringBuilder();
 					StringBuilder script = new StringBuilder();
-					BufferedReader reader = new BufferedReader(source.getReader());
+					BufferedReader reader = new BufferedReader(new InputStreamReader(main));
 					BufferedWriter writer = new BufferedWriter(source.getWriter());
 					
 					// because this is run synchronously, it shouldn't interfere with regular interaction
@@ -536,7 +566,7 @@ public class TritonLocalConsole {
 						}
 						@Override
 						public InputStream getInputStream() {
-							return source.getInputStream();
+							return input.newInputStream();
 						}
 						@Override
 						public boolean isBlocking() {
@@ -643,13 +673,20 @@ public class TritonLocalConsole {
 					}
 					logger.info("Triton console #" + instance.getId() + " disconnected");
 				}
-				catch (Exception e) {
+				catch (Throwable e) {
 					logger.info("Triton console #" + instance.getId() + " disconnected: " + e.getMessage());
+					e.printStackTrace();
 				}
 				finally {
 					console.set(null);
 					if (instance != null) {
 						instances.remove(instance);
+						try {
+							instance.close();
+						}
+						catch (Exception e) {
+							e.printStackTrace();
+						}
 					}
 					if (runtime != null) {
 						runtime.unregisterInThread();
