@@ -538,6 +538,10 @@ public class TritonLocalConsole {
 						public InputStream getInputStream() {
 							return source.getInputStream();
 						}
+						@Override
+						public boolean isBlocking() {
+							return true;
+						}
 					};
 					
 					responseEnd = "";
