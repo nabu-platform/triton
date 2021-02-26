@@ -20,7 +20,6 @@ import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.nio.charset.Charset;
 import java.security.KeyPair;
-import java.security.KeyStore;
 import java.security.PrivateKey;
 import java.security.SecureRandom;
 import java.security.UnrecoverableKeyException;
@@ -76,6 +75,9 @@ public class TritonLocalConsole {
 	private ExecutorService threadPool;
 	private long consoleInstanceId;
 	private boolean clientAuth = true;
+	
+	// defaults to 1 hour
+	private static long timeout = Long.parseLong(System.getProperty("triton.timeout", "3600000"));
 	
 	private SSLServerSocket sslSocket;
 	
@@ -185,6 +187,34 @@ public class TritonLocalConsole {
 		}
 		
 		startSecureThread();
+		
+		startTimeoutChecker();
+	}
+	
+	private void startTimeoutChecker() {
+		Thread thread = new Thread(new Runnable() {
+			@Override
+			public void run() {
+				List<TritonConsoleInstance> connections = getInstances();
+				if (!connections.isEmpty()) {
+					Date date = new Date();
+					for (TritonConsoleInstance source : connections) {
+						if (source.getSource().getLastRead().getTime() < date.getTime() - timeout) {
+							logger.info("Disconnecting inactive host #" + source.getId());
+							try {
+								source.close();
+							}
+							catch (Exception e) {
+								e.printStackTrace();
+							}
+						}
+					}
+				}
+			}
+		});
+		thread.setDaemon(true);
+		thread.setName("triton-timeout-checker");
+		thread.start();
 	}
 
 	public void restartSecureThread() {
@@ -579,6 +609,7 @@ public class TritonLocalConsole {
 					passwordEnd = "";
 					String line;
 					while ((line = reader.readLine()) != null) {
+						source.setLastRead(new Date());
 						if (runtime.isAborted()) {
 							break;
 						}
@@ -614,6 +645,10 @@ public class TritonLocalConsole {
 							}
 							else if (line.startsWith("Negotiate-Response-End:")) {
 								responseEnd = line.substring("Negotiate-Response-End:".length()).trim();
+							}
+							else if (line.startsWith("Interact-Ping:")) {
+								String content = line.substring("Interact-Ping: ".length()).trim();
+								writer.write("Interact-Pong: " + content);
 							}
 							// turn on or off interactive mode
 							else if (line.startsWith("Negotiate-Interactive:")) {
@@ -697,7 +732,7 @@ public class TritonLocalConsole {
 	}
 
 	public List<TritonConsoleInstance> getInstances() {
-		return instances;
+		return new ArrayList<TritonConsoleInstance>(instances);
 	}
 
 	public int getMaxConcurrentConsoles() {

@@ -12,6 +12,7 @@ import java.net.SocketAddress;
 import java.nio.charset.Charset;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
+import java.util.Date;
 
 import javax.net.ssl.SSLSocket;
 
@@ -24,6 +25,7 @@ public class ConsoleSocketSource implements ConsoleSource {
 	private Socket socket;
 	private Writer writer;
 	private boolean closed = false;
+	private Date lastRead = new Date();
 
 	public ConsoleSocketSource(Socket socket, Charset charset) throws IOException {
 		this.socket = socket;
@@ -99,5 +101,15 @@ public class ConsoleSocketSource implements ConsoleSource {
 		catch (IOException e) {
 			throw new RuntimeException(e);
 		}
+	}
+
+	@Override
+	public void setLastRead(Date lastRead) {
+		this.lastRead = lastRead;
+	}
+
+	@Override
+	public Date getLastRead() {
+		return lastRead;
 	}
 }

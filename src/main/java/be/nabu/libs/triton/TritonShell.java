@@ -162,27 +162,29 @@ public class TritonShell {
 							@Override
 							public void handle(Signal arg0) {
 								if (running) {
-									System.out.println("sending sigint");
-									try {
-										writer.write("^SIGINT\n");
-										writer.flush();
-									}
-									catch (IOException e) {
-										e.printStackTrace();
-									}
-									runningKill++;
-									if (runningKill >= 3) {
+									// don't want to trigger on like resize signals etc
+									if (arg0 == Signal.INT) {
 										try {
-											socket.close();
+											writer.write("^SIGINT\n");
+											writer.flush();
 										}
 										catch (IOException e) {
-											// ignore
+											e.printStackTrace();
 										}
-										System.exit(1);
+										runningKill++;
+										if (runningKill >= 3) {
+											try {
+												socket.close();
+											}
+											catch (IOException e) {
+												// ignore
+											}
+											System.exit(1);
+										}
 									}
 								}
 								else {
-									Terminal.SignalHandler.SIG_IGN.handle(arg0);
+									Terminal.SignalHandler.SIG_DFL.handle(arg0);
 								}
 							}
 						})
