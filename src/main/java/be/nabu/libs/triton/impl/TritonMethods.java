@@ -1,7 +1,10 @@
 package be.nabu.libs.triton.impl;
 
+import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -19,6 +22,7 @@ import java.security.cert.CertificateEncodingException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -274,9 +278,26 @@ public class TritonMethods {
 		return aliases;
 	}
 	
-	public void addUser(String cert) throws KeyStoreException, CertificateException, UnsupportedEncodingException {
+	public void addUser(String cert) throws KeyStoreException, CertificateException, IOException {
 		KeyStoreHandler keystore = TritonLocalConsole.getAuthenticationKeystore();
-		X509Certificate parseCertificate = SecurityUtils.parseCertificate(new ByteArrayInputStream(cert.getBytes("ASCII")));
+		X509Certificate parseCertificate;
+		List<String> pendingAuthentication = pendingAuthentication();
+		File file = null;
+		// if it's a valid untrusted filename, we use that
+		if (pendingAuthentication.contains(cert) && cert.matches("^[\\w]+\\.crt$")) {
+			file = new File(new File(Triton.getFolder(), "untrusted"), cert);
+			if (file.exists()) {
+				try (InputStream input = new BufferedInputStream(new FileInputStream(file))) {
+					parseCertificate = SecurityUtils.parseCertificate(input);
+				}
+			}
+			else {
+				throw new FileNotFoundException("Could not find: " + cert);
+			}
+		}
+		else {
+			parseCertificate = SecurityUtils.parseCertificate(new ByteArrayInputStream(cert.getBytes("ASCII")));
+		}
 		if (!keystore.getCertificates().values().contains(parseCertificate)) {
 			keystore.set("user-" + TritonLocalConsole.getAlias(parseCertificate), parseCertificate);
 			TritonLocalConsole.saveAuthentication(keystore);
@@ -286,14 +307,26 @@ public class TritonMethods {
 		else {
 			System.out.println("Already trusted");
 		}
+		if (file != null) {
+			file.delete();
+		}
 	}
 	
 	public void removeUser(String alias) throws KeyStoreException {
-		KeyStoreHandler keystore = TritonLocalConsole.getAuthenticationKeystore();
-		keystore.delete("user-" + alias);
-		TritonLocalConsole.saveAuthentication(keystore);
-		// restart thread so the new cert is valid
-		triton.getConsole().restartSecureThread();
+		List<String> pendingAuthentication = pendingAuthentication();
+		if (pendingAuthentication.contains(alias) && alias.matches("^[\\w]+\\.crt$")) {
+			File file = new File(new File(Triton.getFolder(), "untrusted"), alias);
+			if (file.exists()) {
+				file.delete();
+			}
+		}
+		else {
+			KeyStoreHandler keystore = TritonLocalConsole.getAuthenticationKeystore();
+			keystore.delete("user-" + alias);
+			TritonLocalConsole.saveAuthentication(keystore);
+			// restart thread so the new cert is valid
+			triton.getConsole().restartSecureThread();
+		}
 	}
 
 	public void addAuthor(String cert) throws KeyStoreException, CertificateException, UnsupportedEncodingException {
@@ -358,22 +391,41 @@ public class TritonMethods {
 	// it asks the user for input, once, then stores it as configuration and the next time it will not prompt the user but instead feed the configured value
 	// if we have a default value, the user must accept it, but it will be stored from that point on
 	// we don't want to bother the user with an interaction at every turn
-	public String environment(@GlueParam(name = "key") String key, @GlueParam(name = "default") String defaultValue, @GlueParam(name = "force") Boolean force, @GlueParam(name = "secret") Boolean secret) throws IOException {
-		Properties configuration = Triton.getConfiguration();
-		if (configuration.getProperty(key) == null || (force != null && force)) {
-			TritonConsoleInstance console = TritonLocalConsole.getConsole();
-			if (console != null && console.getInputProvider() != null) {
-				String result = console.getInputProvider().input("Initialize environment configuration '" + key + "'" + (defaultValue == null ? "" : " [" + defaultValue + "]") + ": ", secret != null && secret, defaultValue);
-				if (result == null || result.trim().isEmpty()) {
-					result = defaultValue;
-				}
-				if (result != null && !result.trim().isEmpty()) {
-					configuration.setProperty(key, result.trim());
-					Triton.setConfiguration(configuration);
-					return result.trim();
+	public Object environment(@GlueParam(name = "key") Object object, @GlueParam(name = "default") String defaultValue, @GlueParam(name = "force") Boolean force, @GlueParam(name = "secret") Boolean secret) throws IOException {
+		Properties configuration = Triton.getEnvironment();
+		if (object == null) {
+			return configuration;
+		}
+		else if (object instanceof Properties) {
+			Triton.setEnvironment((Properties) object);
+			return object;
+		}
+		else {
+			String key = object.toString();
+			if (configuration.getProperty(key) == null || (force != null && force)) {
+				TritonConsoleInstance console = TritonLocalConsole.getConsole();
+				if (console != null && console.getInputProvider() != null) {
+					String result = console.getInputProvider().input("Initialize environment configuration '" + key + "'" + (defaultValue == null ? "" : " [" + defaultValue + "]") + ": ", secret != null && secret, defaultValue);
+					if (result == null || result.trim().isEmpty()) {
+						result = defaultValue;
+					}
+					if (result != null && !result.trim().isEmpty()) {
+						configuration.setProperty(key, result.trim());
+						Triton.setEnvironment(configuration);
+						return result.trim();
+					}
 				}
 			}
+			return configuration.getProperty(key);
 		}
-		return configuration.getProperty(key);
+	}
+	
+	public List<String> pendingAuthentication() {
+		List<String> result = new ArrayList<String>();
+		File file = new File(Triton.getFolder(), "untrusted");
+		if (file.exists()) {
+			result.addAll(Arrays.asList(file.list()));
+		}
+		return result;
 	}
 }

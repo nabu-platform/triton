@@ -280,7 +280,68 @@ The triton server is also mixing the input and output of the socket in a number 
 
 As an additional failsafe, if you send a kill signal three times while it is in running mode, the terminal will exit, assuming it can't properly close down the process. This should kill the entire session on the triton server side as well.
 
-# Name
+# Custom Methods
+
+Triton ships with a few additional methods of its own.
+
+## User Management
+
+- connected: list all connected sessions
+- disconnect(long id): disconnect the session with that id
+- addUser(string cert): add the certificate of a user so they can connect
+- users(): list all the trusted users
+- removeUser(string name): remove a user
+
+## Package management
+
+### Authors
+
+- addAuthor(string cert): add the certificate of a trusted author so packages can be installed
+- authors(): list the trusted authors
+- removeAuthor(string name): remove an author, this will also remove any packages installed by that author!
+- authored(string name): list all the packages from a specific author
+
+### Packages
+
+- installed(): list all the installed packages
+- install(Object zip): install a signed zip, you can pass in the bytes or the url to fetch the bytes. note that two interactions are possible:
+	- if the author is not trusted yet, you will be prompted to trust him (defaults to yes in unsupervised mode)
+	- if a different version of the same package is already installed, you will be prompted to ask whether you want to update it (defaults to yes in unsupervised)
+- sign(Object zipContent, String module, String version, String profile, String profilePassword): you can pass in an unsigned zip (either bytes or url), indicate which module and version this is about and choose a profile to sign it with
+- uninstall(packagedescription): you can pass in one or more package descriptions as returned by both installed() and authored()
+
+## Environment
+
+Triton will add an environment method before the "standard" one. If you used namespaced access you will still get the standard one, if you use unnamespaced access, the environment method is switched to the triton one.
+
+The environment method in triton is compatible with the existing one but it has a few additional features:
+
+```
+# get all environment data
+content = environment()
+# update a setting
+content/setting = "test"
+# set all environment data
+environment(content)
+
+# get the current value for that setting without a default
+# if no value exists, the user will be prompted for one! in unsupervised mode this returns the default value (if any)
+environment("setting")
+
+# force reinputting the environment variable, even if it already has a value
+# prompt it so it is masked like a password
+environment("setting", force: true, secret: true)
+```
+
+## System fallback
+
+Because triton is used primarily for system manage, any method that is not namespaced and not recognized, is automatically assumed to be a system command.
+For example if we just type ``ls()`` on a linux system, we will list the files in the current directory.
+This is exactly the same as explicitly typing ``system.ls()``
+
+# Misc
+
+## Name
 
 Triton is the messenger of the sea god Poseidon.
 Interestingly, it can be multiplied into "tritones".

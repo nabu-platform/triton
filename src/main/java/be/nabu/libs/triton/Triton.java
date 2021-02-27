@@ -55,7 +55,7 @@ public class Triton {
 
 	public Map<PackageDescription, ResourceContainer<?>> packages;
 	private TritonGlueEngine glue;
-	private static Properties properties;
+	private static Properties environment, settings;
 	
 	public void start() {
 		glue = new TritonGlueEngine(this, getScriptContainers().toArray(new ResourceContainer[0]));
@@ -564,10 +564,14 @@ public class Triton {
 		}
 	}
 	
-	public static Properties getConfiguration() {
-		if (properties == null) {
+	public static String getSetting(String key, String defaultValue) {
+		return Triton.getSettings().getProperty(key, System.getProperty(key, defaultValue));
+	}
+	
+	public static Properties getSettings() {
+		if (settings == null) {
 			synchronized(Triton.class) {
-				if (properties == null) {
+				if (settings == null) {
 					Properties properties = new Properties();
 					File file = new File(getFolder(), "triton.properties");
 					if (file.exists()) {
@@ -578,15 +582,36 @@ public class Triton {
 							throw new RuntimeException(e);
 						}
 					}
-					Triton.properties = properties;
+					Triton.settings = properties;
 				}
 			}
 		}
-		return properties;
+		return settings;
 	}
 	
-	public static void setConfiguration(Properties properties) {
-		File file = new File(getFolder(), "triton.properties");
+	public static Properties getEnvironment() {
+		if (environment == null) {
+			synchronized(Triton.class) {
+				if (environment == null) {
+					Properties properties = new Properties();
+					File file = new File(getFolder(), "environment.properties");
+					if (file.exists()) {
+						try (InputStream input = new BufferedInputStream(new FileInputStream(file))) {
+							properties.load(input);
+						}
+						catch (Exception e) {
+							throw new RuntimeException(e);
+						}
+					}
+					Triton.environment = properties;
+				}
+			}
+		}
+		return environment;
+	}
+	
+	public static void setEnvironment(Properties properties) {
+		File file = new File(getFolder(), "environment.properties");
 		try (OutputStream output = new BufferedOutputStream(new FileOutputStream(file))) {
 			properties.store(output, null);
 		}

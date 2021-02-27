@@ -6,11 +6,13 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.net.InetAddress;
 import java.net.NetworkInterface;
@@ -36,7 +38,9 @@ import javax.net.ssl.KeyManager;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLSocket;
+import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509KeyManager;
+import javax.net.ssl.X509TrustManager;
 import javax.security.auth.x500.X500Principal;
 
 import org.slf4j.Logger;
@@ -60,9 +64,11 @@ import be.nabu.utils.security.AliasKeyManager;
 import be.nabu.utils.security.BCSecurityUtils;
 import be.nabu.utils.security.KeyPairType;
 import be.nabu.utils.security.KeyStoreHandler;
+import be.nabu.utils.security.RememberingTrustManager;
 import be.nabu.utils.security.SSLContextType;
 import be.nabu.utils.security.SecurityUtils;
 import be.nabu.utils.security.StoreType;
+import be.nabu.utils.security.api.UntrustedHandler;
 
 public class TritonLocalConsole {
 
@@ -291,7 +297,7 @@ public class TritonLocalConsole {
 	
 	public static String getName() {
 		try {
-			return System.getProperty("triton.name", InetAddress.getLocalHost().getHostName());
+			return System.getProperty("triton.name", Triton.getSettings().getProperty("name", InetAddress.getLocalHost().getHostName()));
 		}
 		catch (UnknownHostException e) {
 			return "anonymous";
@@ -328,7 +334,7 @@ public class TritonLocalConsole {
 		}
 		if (key == null) {
 			try {
-				key = new StandardInputProvider().input("Enter key password for profile '" + getProfile() + "': ", true, null);
+				key = new StandardInputProvider().input("Enter key password for profile '" + getProfile() + "' [use default]: ", true, "triton-password");
 				rememberedKeyPassword = key;
 			}
 			catch (IOException e) {
@@ -345,6 +351,7 @@ public class TritonLocalConsole {
 	public static SSLContext getContext() {
 		// in server mode, we don't force a password
 		String defaultKeyPassword = Main.SERVER_MODE ? "triton-password" : null;
+		// it's too annoying to force clients to use a password every time?
 		String keyPassword = getKeyPassword(defaultKeyPassword);
 		return getContext(getProfile(), keyPassword, true);
 	}
@@ -379,7 +386,36 @@ public class TritonLocalConsole {
 				}
 			}
 			SSLContext context = SSLContext.getInstance(SSLContextType.TLS.toString());
-			context.init(keyManagers, keystore.getTrustManagers(), new SecureRandom());
+			TrustManager[] trustManagers = keystore.getTrustManagers();
+			for (int i = 0; i < trustManagers.length; i++) {
+				if (trustManagers[i] instanceof X509TrustManager) {
+					trustManagers[i] = new RememberingTrustManager((X509TrustManager) trustManagers[i], new UntrustedHandler() {
+						@Override
+						public void handle(X509Certificate[] chain, boolean client, String authType) {
+							if (client) {
+								boolean store = Boolean.parseBoolean(Triton.getSetting("store.untrusted", "true"));
+								if (store) {
+									File folder = new File(Triton.getFolder(), "untrusted");
+									String fileName = chain[0].getSubjectX500Principal().toString().replaceAll("[^\\w]+", "_");
+									if (!folder.exists()) {
+										folder.mkdirs();
+									}
+									File file = new File(folder, fileName + ".crt");
+									try (OutputStream out = new BufferedOutputStream(new FileOutputStream(file))) {
+										OutputStreamWriter outputStreamWriter = new OutputStreamWriter(out, "ASCII");
+										SecurityUtils.encodeCertificate(chain[0], outputStreamWriter);
+										outputStreamWriter.flush();
+									}
+									catch (Exception e) {
+										e.printStackTrace();
+									}
+								}
+							}
+						}
+					});
+				}
+			}
+			context.init(keyManagers, trustManagers, new SecureRandom());
 			return context;
 		}
 		catch (UnrecoverableKeyException e) {
@@ -659,6 +695,12 @@ public class TritonLocalConsole {
 							}
 							else if (line.startsWith("Negotiate-Password-End:")) {
 								passwordEnd = line.substring("Negotiate-Password-End:".length()).trim();
+							}
+							else if (line.startsWith("Fetch-Meta:")) {
+								String meta = line.substring("Fetch-Meta:".length()).trim();
+								if ("name".equalsIgnoreCase(meta)) {
+									writer.write(getName() + "\n");
+								}
 							}
 							else if (line.equals("refresh")) {
 								engine.refresh();

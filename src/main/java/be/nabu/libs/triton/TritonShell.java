@@ -233,6 +233,11 @@ public class TritonShell {
 				// an answer will always come
 				readAnswer(reader, ending);
 				
+				writer.write("Fetch-Meta: name\n");
+				writer.flush();
+				// an answer will always come
+				String serverName = readAnswer(reader, ending).trim();
+				
 				terminal.puts(Capability.clear_screen);
                 terminal.flush();
                 terminal.writer().println("_______________________________________________________________\n");
@@ -275,7 +280,7 @@ public class TritonShell {
 				// it doesn't seem to work (unfortunately) with an empty string
 				// the space does tend to remain in unwanted places if content comes back from the server though...
 				// we could get rid of the space but then we need a proper prompt here, which will interfere with the prompt via telnet so we would have to cripple the straight-to-telnet shizzle
-				while ((line = consoleReader.readLine("$ ")) != null) {
+				while ((line = consoleReader.readLine(serverName + "$ ")) != null) {
 					if (line.equals("self")) {
 						String certWriter = encodeCert();
 						terminal.writer().println(certWriter);
@@ -401,9 +406,9 @@ public class TritonShell {
 			}
 			result += single;
 		}
-		Properties configuration = Triton.getConfiguration();
+		Properties configuration = Triton.getEnvironment();
 		configuration.setProperty(key, result);
-		Triton.setConfiguration(configuration);
+		Triton.setEnvironment(configuration);
 	}
 	
 	private static void chooseHost() throws IOException {
@@ -416,7 +421,7 @@ public class TritonShell {
 		if (host == null) {
 			StandardInputProvider standardInputProvider = new StandardInputProvider();
 			
-			Properties configuration = Triton.getConfiguration();
+			Properties configuration = Triton.getEnvironment();
 			String hosts = configuration.getProperty("hosts." + profile);
 			if (hosts != null) {
 				System.out.println();
@@ -458,7 +463,7 @@ public class TritonShell {
 									}
 									configuration.setProperty("hosts." + profile, builder);
 								}
-								Triton.setConfiguration(configuration);
+								Triton.setEnvironment(configuration);
 							}
 						}
 						chooseHost();
@@ -515,7 +520,7 @@ public class TritonShell {
 				}
 				else {
 					System.out.println("Available profiles: \n");
-					Properties configuration = Triton.getConfiguration();
+					Properties configuration = Triton.getEnvironment();
 					String usedProfiles = configuration.getProperty("profiles");
 					if (usedProfiles != null && !usedProfiles.trim().isEmpty()) {
 						List<String> profileList = new ArrayList<String>(Arrays.asList(usedProfiles.split("[\\s]*,[\\s]*")));
@@ -641,7 +646,7 @@ public class TritonShell {
 							profileStringified += single;
 						}
 						configuration.setProperty("profiles", profileStringified);
-						Triton.setConfiguration(configuration);
+						Triton.setEnvironment(configuration);
 					}
 					else {
 						// we search an exact match first
