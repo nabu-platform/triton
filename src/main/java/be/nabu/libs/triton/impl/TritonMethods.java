@@ -365,7 +365,7 @@ public class TritonMethods {
 			if (!authored.isEmpty()) {
 				TritonConsoleInstance console = TritonLocalConsole.getConsole();
 				if (console != null && console.getInputProvider() != null) {
-					String result = console.getInputProvider().input("Do you want to remove all " + authored.size() + " packages attributed to this author? [y/N]: ", false, "y");
+					String result = console.getInputProvider().input("Do you want to remove all " + authored.size() + " packages attributed to this author? [Y/n]: ", false, "y");
 					if (result != null && result.equalsIgnoreCase("y")) {
 						uninstall(authored.toArray(new PackageDescription[0]));
 					}
@@ -418,6 +418,37 @@ public class TritonMethods {
 			}
 			return configuration.getProperty(key);
 		}
+	}
+	
+	public String name(String name) {
+		String currentName = TritonLocalConsole.getName();
+		if (name != null && !name.equals(currentName)) {
+			Properties settings = Triton.getSettings();
+			settings.setProperty("name", name);
+			try {
+				X509Certificate[] x509Certificates = TritonLocalConsole.getAuthenticationKeystore().getPrivateKeys().get(TritonLocalConsole.getProfile());
+				// if we have a self signed and we update the name, update the cert as well
+				// we do that by removing it and restarting the ssl
+				if (x509Certificates.length == 1 && SecurityUtils.isSelfSigned(x509Certificates[0])) {
+					TritonConsoleInstance console = TritonLocalConsole.getConsole();
+					if (console != null && console.getInputProvider() != null) {
+						String input = console.getInputProvider().input("Do you want to regenerate the server certificate to match the new name? [Y/n]: ", false, "y");
+						if (input == null || input.trim().equalsIgnoreCase("y")) {
+							KeyStoreHandler keystore = TritonLocalConsole.getAuthenticationKeystore();
+							keystore.delete(TritonLocalConsole.getProfile());
+							TritonLocalConsole.saveAuthentication(keystore);
+							triton.getConsole().restartSecureThread();
+						}
+					}
+				}
+				currentName = name;
+				Triton.setSettings(settings);
+			}
+			catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		return currentName;
 	}
 	
 	public List<String> pendingAuthentication() {

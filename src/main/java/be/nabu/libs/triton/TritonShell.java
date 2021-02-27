@@ -7,7 +7,6 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
-import java.io.PipedInputStream;
 import java.io.StringWriter;
 import java.net.Socket;
 import java.net.URI;
@@ -17,7 +16,6 @@ import java.security.cert.CertificateEncodingException;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -408,6 +406,7 @@ public class TritonShell {
 		}
 		Properties configuration = Triton.getEnvironment();
 		configuration.setProperty(key, result);
+		System.out.println("persisting choice: " + key  + " = " + result);
 		Triton.setEnvironment(configuration);
 	}
 	
@@ -439,7 +438,7 @@ public class TritonShell {
 				if (result.matches("^[0-9]+$")) {
 					int choice = Integer.parseInt(result);
 					if (choice - 1 < split.length && choice >= 1) {
-						System.setProperty("triton.host", split[choice - 1]);
+						System.setProperty("host", split[choice - 1]);
 						persistHostChoice("hosts." + profile, split[choice - 1], split);
 						return;
 					}
@@ -480,7 +479,7 @@ public class TritonShell {
 				}
 				// we assume you typed a new one
 				else {
-					System.setProperty("triton.host", result);
+					System.setProperty("host", result);
 					persistHostChoice("hosts." + profile, result, split);
 				}
 			}
@@ -488,7 +487,8 @@ public class TritonShell {
 				System.out.println();
 				String input = standardInputProvider.input("Enter the host url [ts://localhost]: ", false, "ts://localhost");
 				if (input != null && !input.trim().isEmpty()) {
-					System.setProperty("triton.host", input);
+					System.setProperty("host", input);
+					persistHostChoice("hosts." + profile, input);
 					return;
 				}
 				else {

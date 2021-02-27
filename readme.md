@@ -286,11 +286,33 @@ Triton ships with a few additional methods of its own.
 
 ## User Management
 
-- connected: list all connected sessions
+- connected(): list all connected sessions
 - disconnect(long id): disconnect the session with that id
 - addUser(string cert): add the certificate of a user so they can connect
 - users(): list all the trusted users
 - removeUser(string name): remove a user
+
+A user can print the certificate for a certain profile by typing ``self``, then send that certificate via third party protocol like email or chat.
+
+For convenience (you can turn it off by setting ``store.untrusted`` to false), anyone who connects to the secure endpoint but is not trusted, has his certificate persisted for later evaluation.
+You can check out the currently pending unhandled certificates using:
+
+- pendingAuthentication(): list all currently pending certs
+
+You can accept or reject the pending using the same addUser and removeUser methods described above, passing in the exact output of the pending.
+
+Note that you should be *absolutely* sure who the certificate belongs to before accepting it. It is merely a convenience method to prevent having to manually send the `self` around.
+
+The preferred method is:
+
+- someone who is trusted logs in (can be over ssh to the local endpoint), he already checks the pending to see if there is anything waiting
+- someone who is untrusted tries to connect
+- the connected person rechecks pending, finds the new certificate and accepts it
+
+Actions are coordinated via a third party protocol for example phone or chat.
+Any process beyond that can be easily compromised by well informed actors.
+
+For enterprise users it is strongly recommended to centralize user trust management via externally managed certificate authorities.
 
 ## Package management
 
@@ -333,11 +355,30 @@ environment("setting")
 environment("setting", force: true, secret: true)
 ```
 
+### Server Name
+
+Triton will, by default, use the local name of the host it is on.
+You can however give it a more meaningful name by passing in the ``name`` property.
+
+Alternatively, once triton is started up, you can use the command ``name()`` to both fetch the current (without a parameter) and set a new one (if you pass in a parameter).
+Note that if you are using self signed certificates and you update the name of a server, you will be prompted to regenerate the certificate to match the new name (defaults to yes).
+
+Note that any user connecting to the server after the regenerated certificate is set, will be prompted to accept the new one. This may lead to confusion so this should preferably be done soon after installation of the triton server.
+
+Note that for enterprise environments the certificates should be managed centrally. There will be no prompt to regenerate in such a case.
+
 ## System fallback
 
 Because triton is used primarily for system manage, any method that is not namespaced and not recognized, is automatically assumed to be a system command.
 For example if we just type ``ls()`` on a linux system, we will list the files in the current directory.
 This is exactly the same as explicitly typing ``system.ls()``
+
+
+
+
+
+
+
 
 # Misc
 

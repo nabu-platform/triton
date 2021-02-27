@@ -589,6 +589,16 @@ public class Triton {
 		return settings;
 	}
 	
+	public static void setSettings(Properties properties) {
+		File file = new File(getFolder(), "triton.properties");
+		try (OutputStream output = new BufferedOutputStream(new FileOutputStream(file))) {
+			properties.store(output, null);
+		}
+		catch (Exception e) {
+			throw new RuntimeException(e);
+		}
+	}
+	
 	public static Properties getEnvironment() {
 		if (environment == null) {
 			synchronized(Triton.class) {

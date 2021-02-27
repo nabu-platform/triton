@@ -297,7 +297,7 @@ public class TritonLocalConsole {
 	
 	public static String getName() {
 		try {
-			return System.getProperty("triton.name", Triton.getSettings().getProperty("name", InetAddress.getLocalHost().getHostName()));
+			return Triton.getSetting("name", InetAddress.getLocalHost().getHostName());
 		}
 		catch (UnknownHostException e) {
 			return "anonymous";
@@ -305,23 +305,23 @@ public class TritonLocalConsole {
 	}
 	
 	public static String getOrganisation() {
-		return System.getProperty("triton.organisation", "Celerium");
+		return Triton.getSetting("organisation", "Celerium");
 	}
 	
 	public static String getOrganisationalUnit() {
-		return System.getProperty("triton.organisationalUnit", "Nabu");
+		return Triton.getSetting("organisationalUnit", "Nabu");
 	}
 	
 	public static String getLocality() {
-		return System.getProperty("triton.locality", "Antwerp");
+		return Triton.getSetting("locality", "Antwerp");
 	}
 	
 	public static String getState() {
-		return System.getProperty("triton.state", "Antwerp");
+		return Triton.getSetting("state", "Antwerp");
 	}
 	
 	public static String getCountry() {
-		return System.getProperty("triton.country", "Belgium");
+		return Triton.getSetting("country", "Belgium");
 	}
 	
 	private static String rememberedKeyPassword;
@@ -372,6 +372,7 @@ public class TritonLocalConsole {
 				else {
 					savePackaging(keystore);
 				}
+				privateKey = pair.getPrivate();
 			}
 			
 			// because passwords are (likely) different cross keys and it does not seem to be possible to indicate the correct key when creating the key managers...
