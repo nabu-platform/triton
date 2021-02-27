@@ -374,7 +374,16 @@ For example if we just type ``ls()`` on a linux system, we will list the files i
 This is exactly the same as explicitly typing ``system.ls()``
 
 
+# Force deinstallation on ubuntu
 
+```
+# remove the descriptor files used to run deinstallation scripts etc (they don't work cause they expect a GUI for now)
+sudo rm /var/lib/dpkg/info/triton-server.*
+# hard remove the package
+sudo dpkg --remove --force-remove-reinstreq triton-server
+# remove the files
+sudo rm -rf /opt/triton-server/
+```
 
 
 

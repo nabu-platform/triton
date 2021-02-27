@@ -617,7 +617,11 @@ public class TritonLocalConsole {
 								}
 								writer.flush();
 							}
-							return reader.readLine();
+							String result = reader.readLine();
+							if (result == null || result.trim().isEmpty()) {
+								result = defaultValue;
+							}
+							return result;
 						}
 					};
 					instance.setInputProvider(inputProvider);

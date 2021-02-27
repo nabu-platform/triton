@@ -382,7 +382,8 @@ public class TritonShell {
 
 	private static void createProfile() throws IOException {
 		StandardInputProvider standardInputProvider = new StandardInputProvider();
-		String input = standardInputProvider.input("New profile name: ", false, null);
+		String name = TritonLocalConsole.getName();
+		String input = standardInputProvider.input("New profile name [" + name + "]: ", false, name);
 		if (input == null || input.trim().isEmpty()) {
 			System.out.println("Please provide a profile name");
 			createProfile();
@@ -406,11 +407,14 @@ public class TritonShell {
 		}
 		Properties configuration = Triton.getEnvironment();
 		configuration.setProperty(key, result);
-		System.out.println("persisting choice: " + key  + " = " + result);
 		Triton.setEnvironment(configuration);
 	}
 	
 	private static void chooseHost() throws IOException {
+		chooseHost(null);
+	}
+	
+	private static void chooseHost(String filter) throws IOException {
 		String host = System.getProperty("triton.host", System.getProperty("host"));
 		String profile = TritonLocalConsole.getProfile();
 		if (profile == null) {
@@ -428,13 +432,25 @@ public class TritonShell {
 				System.out.println();
 				int i = 1;
 				String[] split = hosts.split("[\\s]*,[\\s]*");
+				Integer first = null;
 				for (String single : split) {
-					System.out.println(i++ + ") " + single);
+					if (filter != null && !filter.trim().isEmpty() && !single.toLowerCase().contains(filter.toLowerCase())) {
+						// we use it as an index, so it must stay accurate
+						i++;
+						continue;
+					}
+					else {
+						if (first == null) {
+							first = i;
+						}
+						System.out.println(i++ + ") " + single);
+					}
 				}
+				System.out.println(i++ + ") Add new host");
 				System.out.println(i++ + ") Remove host");
 //				System.out.println(i++ + ") Exit");
 				System.out.println();
-				String result = standardInputProvider.input("Choose host or enter a new one [" + split[0] + "]: ", false, "1");
+				String result = standardInputProvider.input("Choose host [" + (first == null ? "none" : split[first - 1]) + "]: ", false, first == null ? "" + (split.length + 4) : first.toString());
 				if (result.matches("^[0-9]+$")) {
 					int choice = Integer.parseInt(result);
 					if (choice - 1 < split.length && choice >= 1) {
@@ -443,6 +459,12 @@ public class TritonShell {
 						return;
 					}
 					else if (choice == split.length + 1) {
+						result = standardInputProvider.input("New Host: ", false, null);
+						System.setProperty("host", result);
+						persistHostChoice("hosts." + profile, result, split);
+						return;
+					}
+					else if (choice == split.length + 2) {
 						result = standardInputProvider.input("Host to remove: ", false, null);
 						if (result.matches("^[0-9]+$")) {
 							choice = Integer.parseInt(result);
@@ -468,19 +490,21 @@ public class TritonShell {
 						chooseHost();
 						return;
 					}
-					else if (choice == split.length + 2) {
+					else if (choice == split.length + 3) {
 						System.exit(1);
 					}
 					else {
-						System.out.println("Invalid choice");
 						chooseHost();
 						return;
 					}
 				}
-				// we assume you typed a new one
 				else {
-					System.setProperty("host", result);
-					persistHostChoice("hosts." + profile, result, split);
+					// we assume you typed a new one
+//					System.setProperty("host", result);
+//					persistHostChoice("hosts." + profile, result, split);
+					// we assume you typed a filter to reduce the amount of host options
+					chooseHost(result);
+					return;
 				}
 			}
 			else {
@@ -501,6 +525,10 @@ public class TritonShell {
 	}
 	
 	private static void chooseProfile() {
+		chooseProfile(null);
+	}
+	
+	private static void chooseProfile(String filter) {
 		String chosenProfile = System.getProperty("triton.profile", System.getProperty("profile"));
 		// choose a profile if not chosen
 		if (chosenProfile == null) {
@@ -540,7 +568,17 @@ public class TritonShell {
 						profiles = profileList;
 					}
 					
+					Integer first = null;
+					
 					for (String profile : profiles) {
+						// if you have a filter, only show the relevant ones
+						if (filter != null && !filter.trim().isEmpty() && !profile.toLowerCase().contains(filter.toLowerCase())) {
+							i++;
+							continue;
+						}
+						if (first == null) {
+							first = i;
+						}
 						System.out.println(i++ + ") " + profile + " [" + TritonLocalConsole.getAlias(privateKeys.get(profile)[0]) + "]");
 					}
 					System.out.println(i++ + ") Create new profile");
@@ -548,7 +586,7 @@ public class TritonShell {
 					System.out.println(i++ + ") Print certificate");
 //					System.out.println(i++ + ") Exit");
 					System.out.println();
-					String input = standardInputProvider.input("Choose profile [" + profiles.get(0) + "]: ", false, "1");
+					String input = standardInputProvider.input("Choose profile [" + (first == null ? "none" : profiles.get(first - 1)) + "]: ", false, first == null ? "" + (profiles.size() + 5) : first.toString());
 					// chosen by number
 					if (input.matches("^[0-9]+$")) {
 						int profileIndex = Integer.parseInt(input);
@@ -630,7 +668,6 @@ public class TritonShell {
 							System.exit(0);
 						}
 						else if (profileIndex - 1 >= profiles.size() || profileIndex < 1) {
-							System.out.println("Invalid profile choice");
 							chooseProfile();
 							return;
 						}
@@ -656,16 +693,19 @@ public class TritonShell {
 						// otherwise we look for the first partial match
 						else {
 							boolean found = false;
-							for (String potential : profiles) {
-								if (potential.toLowerCase().contains(input.toLowerCase())) {
-									System.setProperty("triton.profile", potential);
-									found = true;
-									break;
-								}
-							}
+							// don't allow for partial matches, instead filter!
+							// otherwise it is very confusing behavior that a filter only kicks in if no one contains the part
+//							for (String potential : profiles) {
+//								if (potential.toLowerCase().contains(input.toLowerCase())) {
+//									System.setProperty("triton.profile", potential);
+//									found = true;
+//									break;
+//								}
+//							}
 							if (!found) {
-								System.out.println("Invalid profile choice");
-								System.exit(0);
+								// we assume you meant to filter!
+								chooseProfile(input);
+								return;
 							}
 						}
 					}
