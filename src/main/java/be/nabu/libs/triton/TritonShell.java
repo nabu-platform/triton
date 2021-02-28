@@ -1,9 +1,14 @@
 package be.nabu.libs.triton;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
@@ -20,9 +25,13 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.UUID;
 
 import javax.net.ssl.SSLContext;
 
+import org.jline.builtins.Less;
+import org.jline.builtins.Nano;
+import org.jline.builtins.Source;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
 import org.jline.reader.impl.DefaultParser;
@@ -148,7 +157,8 @@ public class TritonShell {
 				thread.setDaemon(true);
 				thread.start();
 				
-				BufferedReader reader = new BufferedReader(new InputStreamReader(socket.getInputStream(), "UTF-8"));
+				InputStream inputStream = socket.getInputStream();
+				BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, "UTF-8"));
 				OutputStream outputStream = socket.getOutputStream();
 				OutputStreamWriter outputStreamWriter = new OutputStreamWriter(outputStream, "UTF-8");
 				BufferedWriter writer = new BufferedWriter(outputStreamWriter);
@@ -207,10 +217,14 @@ public class TritonShell {
 //					Triton.setConfiguration(configuration);
 //				}
 				
-				
+				// regular ending used to denote the end of a stream by the server
 				String ending = "//the--end//";
+				// used when the server wants to ask the user for typed input
 				String inputEnding = "//request--input//";
+				// same as above but it should be considered to be sensitive information like a password and likely shielded from view
 				String passwordEnding = "//request--password//";
+				// we want to edit a particular file
+				String fileEditEnding = "//request--file--edit//";
 				// we set a requested ending to each response so we can target that in our parsing
 				// we do this as the first step so we can parse the next steps correctly
 				writer.write("Negotiate-Response-End: " + ending + "\n");
@@ -227,6 +241,11 @@ public class TritonShell {
 				readAnswer(reader, ending);
 				
 				writer.write("Negotiate-Password-End: " + passwordEnding + "\n");
+				writer.flush();
+				// an answer will always come
+				readAnswer(reader, ending);
+				
+				writer.write("Negotiate-File-Edit-End: " + fileEditEnding + "\n");
 				writer.flush();
 				// an answer will always come
 				readAnswer(reader, ending);
@@ -297,6 +316,20 @@ public class TritonShell {
 						readAnswer(reader, ending);
 						continue;
 					}
+					// experimental tests
+					if (line.equals("less")) {
+						try {
+							Less less = new Less(terminal, new File(".").toPath());
+							// does not work (yet!)
+							less.run(new Source.PathSource(new File("test.txt"), "test.txt"));
+							continue;
+						}
+						catch (Exception e) {
+							e.printStackTrace();
+							continue;
+						}
+					}
+					
 					// install the cert
 					if (line.equals("allow")) {
 						// force generation of the key (not clean!)
@@ -338,6 +371,50 @@ public class TritonShell {
 								writer.write(content + "\n");
 								writer.flush();
 							}
+							// we want to edit a file
+							else if (responseLine.endsWith(fileEditEnding)) {
+								// the line is structured as follows:
+								// size_in_bytes;filename
+								String[] parts = responseLine.replace(fileEditEnding, "").split(";", 2);
+								long size = Long.parseLong(parts[0]);
+								String fileName = parts[1];
+								File tmpFolder = Triton.getNewTmpFolder();
+								writer.write("ok\n");
+								writer.flush();
+								File file;
+								if (size > 0) {
+									file = copyInFile(tmpFolder, size, fileName, inputStream);
+								}
+								else {
+									file = new File(tmpFolder, fileName);
+									file.createNewFile();
+								}
+								Nano nano = new Nano(terminal, tmpFolder);
+								nano.open(file.getName());
+								nano.run();
+								// once we are done, we will reupload the file
+								// we could do some MD5 hashing to double check that you actually changed something, but then we still have to read through the file
+								// given that we are likely to only edit small files, we will skip it for now and simply stream it back
+								// we first write the same line as the server sent us
+								writer.write(file.length() + ";" + file.getName() + fileEditEnding + "\n");
+								// flush it cause we are directly using the outputstream next!
+								writer.flush();
+								// we wait for the go ahead of the server
+								String readLine = reader.readLine();
+								if (readLine.equalsIgnoreCase("ok")) {
+									if (file.length() > 0) {
+										// then we stream back the file
+										copyOutFile(file, outputStream);
+									}
+									// delete temporary files
+									file.delete();
+									tmpFolder.delete();
+								}
+								// we should handle this better in the future
+								else {
+									throw new IllegalStateException("Unexpected response: '" + readLine + "'");
+								}
+							}
 							else {
 								terminal.writer().write(responseLine + "\n");
 								terminal.writer().flush();
@@ -367,6 +444,41 @@ public class TritonShell {
 			System.out.println("Could not connect to Triton agent, are you sure it is running?");
 		}
 	}
+	
+	public static void copyOutFile(File file, OutputStream outputStream) {
+		try (InputStream inputStream = new BufferedInputStream(new FileInputStream(file))) {
+			byte [] buffer = new byte[8096];
+			int read = 0;
+			while ((read = inputStream.read(buffer)) >= 0) {
+				outputStream.write(buffer, 0, read);
+				outputStream.flush();
+			}
+		}
+		catch (Exception e) {
+			throw new RuntimeException(e);
+		}
+	}
+	
+	public static File copyInFile(File targetFolder, long size, String fileName, InputStream inputStream) {
+		File file = new File(targetFolder, fileName);
+		// it is then followed by that exact amount in bytes
+		try (OutputStream output = new BufferedOutputStream(new FileOutputStream(file))) {
+			byte [] buffer = new byte[8096];
+			int read = 0;
+			while ((read = inputStream.read(buffer, 0, (int) Math.min(size, buffer.length))) >= 0) {
+				output.write(buffer, 0, read);
+				size -= read;
+				if (size == 0) {
+					break;
+				}
+			}
+		}
+		catch (Exception e) {
+			throw new RuntimeException(e);
+		}
+		return file;
+	}
+	
 
 	private static String encodeCert() throws KeyStoreException, CertificateEncodingException, IOException {
 		X509Certificate certificate = TritonLocalConsole.getAuthenticationKeystore().getCertificate(TritonLocalConsole.getProfile());

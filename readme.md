@@ -1,5 +1,25 @@
 # TODO
 
+virtual file system implementation for Path (inputstreams etc are via path.getFileSystemProvider().newInputStream(path))
+-> once this is done, i can implement nano & less (ship with the terminal)
+can also allow for easy file dropping? e.g. create a temporary folder, drop files in it, return to terminal which is prompted to "continue uploading files [Y/n]"
+	-> if y, all the files in the folder will be dropped there
+	
+how to figure out which methods need to be run on the client?
+e.g. nano("thefile") needs to run on the client primarily, though you might pass in a variable that lives in the server context?
+same for file upload, you want to cd() to the correct folder on the server, then do something like "upload()" or "download(thefile)" allowing you to exchange files
+
+perhaps add callbacks much like input, but then specifically for text editing etc?
+
+so nano would trigger a specific request (if the client is able) to text edit a file
+-> at that point the current text has to be streamed to the client first?
+
+any binary transfer is preceeded by the amount of bytes to be streamed
+-> there is no "chunked" type alternative
+-> when you stream a big file for editing, we take an md5 while streaming
+	-> we only upload the file again if the md5 has changed
+
+
 Should perhaps store "servers" in different keystore from "profiles"?
 Otherwise, by connecting to a server, you also automatically give it access to connect to your machine?
 Although this is (by default) in .triton-server and .triton-client respectively...

@@ -1,6 +1,8 @@
 package be.nabu.libs.triton.impl;
 
 import java.io.BufferedInputStream;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
@@ -8,8 +10,12 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.io.OutputStreamWriter;
 import java.io.StringWriter;
 import java.io.UnsupportedEncodingException;
+import java.io.Writer;
 import java.security.InvalidKeyException;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
@@ -31,6 +37,7 @@ import java.util.zip.ZipOutputStream;
 
 import be.nabu.glue.annotations.GlueParam;
 import be.nabu.glue.core.impl.methods.FileMethods;
+import be.nabu.glue.core.impl.providers.SystemMethodProvider;
 import be.nabu.libs.evaluator.annotations.MethodProviderClass;
 import be.nabu.libs.resources.ResourceUtils;
 import be.nabu.libs.resources.api.ReadableResource;
@@ -41,10 +48,13 @@ import be.nabu.libs.resources.memory.MemoryItem;
 import be.nabu.libs.triton.Triton;
 import be.nabu.libs.triton.TritonLocalConsole;
 import be.nabu.libs.triton.TritonLocalConsole.TritonConsoleInstance;
+import be.nabu.libs.triton.TritonShell;
 import be.nabu.utils.io.IOUtils;
 import be.nabu.utils.io.api.ByteBuffer;
+import be.nabu.utils.io.api.DelimitedCharContainer;
 import be.nabu.utils.io.api.ReadableContainer;
 import be.nabu.utils.io.api.WritableContainer;
+import be.nabu.utils.io.blocking.LoggingOutputStream;
 import be.nabu.utils.security.KeyStoreHandler;
 import be.nabu.utils.security.SecurityUtils;
 import be.nabu.utils.security.SignatureType;
@@ -458,5 +468,55 @@ public class TritonMethods {
 			result.addAll(Arrays.asList(file.list()));
 		}
 		return result;
+	}
+	
+	// edit a file
+	public void nano(String fileName) throws IOException {
+		TritonConsoleInstance console = TritonLocalConsole.getConsole();
+		if (console == null) {
+			throw new IllegalStateException("No console attached");
+		}
+		else if (!console.isSupportsFileEditing()) {
+			throw new IllegalStateException("The attached console does not support file editing");
+		}
+		String directory = SystemMethodProvider.getDirectory();
+		File file = new File(directory, fileName);
+		// we create it if it does not exist
+		if (!file.exists()) {
+			file.createNewFile();
+		}
+		// we start writing shizzle
+		Writer writer = new BufferedWriter(console.getSource().getWriter());
+		String line = file.length() + ";" + file.getName() + console.getFileEditEnd() + "\n";
+		writer.write(line);
+		// then we stream the file!
+		writer.flush();
+		BufferedReader reader = new BufferedReader(new InputStreamReader(console.getSource().getInputStream(), console.getSource().getCharset()));
+		String readLine = reader.readLine();
+		// retain ability to say no
+		if (readLine.equals("ok")) {
+			if (file.length() > 0) {
+				TritonShell.copyOutFile(file, console.getSource().getOutputStream());
+			}
+			readLine = reader.readLine();
+			String[] parts = readLine.replace(console.getFileEditEnd(), "").split(";", 2);
+			long size = Long.parseLong(parts[0]);
+			// the filename should be the same?
+			String fileNameToCheck = parts[1];
+			writer.write("ok\n");
+			writer.flush();
+			if (size > 0) {
+				// either way, the data is coming, so let's read that
+				TritonShell.copyInFile(file.getParentFile(), size, fileNameToCheck, console.getSource().getInputStream());
+			}
+			// if it is empty, we delete it
+			else {
+				file.delete();
+			}
+		}
+		// we should handle this better in the future!
+		else {
+			throw new IllegalStateException("Not what i expected: " + readLine);
+		}
 	}
 }

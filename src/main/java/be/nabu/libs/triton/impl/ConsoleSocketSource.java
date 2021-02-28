@@ -16,8 +16,12 @@ import java.util.Date;
 
 import javax.net.ssl.SSLSocket;
 
+import be.nabu.libs.triton.Triton;
 import be.nabu.libs.triton.TritonLocalConsole;
 import be.nabu.libs.triton.api.ConsoleSource;
+import be.nabu.utils.io.blocking.DeblockingInputStream;
+import be.nabu.utils.io.blocking.LoggingInputStream;
+import be.nabu.utils.io.blocking.LoggingOutputStream;
 
 public class ConsoleSocketSource implements ConsoleSource {
 
@@ -26,11 +30,18 @@ public class ConsoleSocketSource implements ConsoleSource {
 	private Writer writer;
 	private boolean closed = false;
 	private Date lastRead = new Date();
+	private Charset charset;
+	private DeblockingInputStream deblockingInput;
+	private InputStream mainInput;
 
 	public ConsoleSocketSource(Socket socket, Charset charset) throws IOException {
 		this.socket = socket;
-		reader = new InputStreamReader(socket.getInputStream(), charset);
-		writer = new OutputStreamWriter(socket.getOutputStream(), charset);
+		this.charset = charset;
+		// deblocking magic at the root to support closing stuff for example for processes
+		deblockingInput = new DeblockingInputStream(socket.getInputStream());
+		mainInput = deblockingInput.newInputStream();
+		reader = new InputStreamReader(getInputStream(), charset);
+		writer = new OutputStreamWriter(getOutputStream(), charset);
 	}
 	
 	@Override
@@ -85,18 +96,13 @@ public class ConsoleSocketSource implements ConsoleSource {
 
 	@Override
 	public InputStream getInputStream() {
-		try {
-			return socket.getInputStream();
-		}
-		catch (IOException e) {
-			throw new RuntimeException(e);
-		}
+		return Triton.DEBUG ? new LoggingInputStream(mainInput) : mainInput;
 	}
 
 	@Override
 	public OutputStream getOutputStream() {
 		try {
-			return socket.getOutputStream();
+			return Triton.DEBUG ? new LoggingOutputStream(socket.getOutputStream()) : socket.getOutputStream();
 		}
 		catch (IOException e) {
 			throw new RuntimeException(e);
@@ -112,4 +118,14 @@ public class ConsoleSocketSource implements ConsoleSource {
 	public Date getLastRead() {
 		return lastRead;
 	}
+
+	@Override
+	public Charset getCharset() {
+		return charset;
+	}
+
+	public DeblockingInputStream getDeblockingInput() {
+		return deblockingInput;
+	}
+
 }

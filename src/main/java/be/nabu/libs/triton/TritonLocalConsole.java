@@ -60,6 +60,7 @@ import be.nabu.libs.authentication.impl.BasicPrincipalImpl;
 import be.nabu.libs.triton.api.ConsoleSource;
 import be.nabu.libs.triton.impl.ConsoleSocketSource;
 import be.nabu.utils.io.blocking.DeblockingInputStream;
+import be.nabu.utils.io.blocking.LoggingInputStream;
 import be.nabu.utils.security.AliasKeyManager;
 import be.nabu.utils.security.BCSecurityUtils;
 import be.nabu.utils.security.KeyPairType;
@@ -97,6 +98,7 @@ public class TritonLocalConsole {
 		private long id;
 		private Date connected = new Date();
 		private InputProvider inputProvider;
+		private String responseEnd, inputEnd, passwordEnd, fileEditEnd;
 		
 		TritonConsoleInstance(ConsoleSource source, ScriptRuntime rootRuntime) {
 			this.source = source;
@@ -129,6 +131,33 @@ public class TritonLocalConsole {
 		}
 		public void setInputProvider(InputProvider inputProvider) {
 			this.inputProvider = inputProvider;
+		}
+		public boolean isSupportsFileEditing() {
+			return fileEditEnd != null;
+		}
+		public String getResponseEnd() {
+			return responseEnd;
+		}
+		public void setResponseEnd(String responseEnd) {
+			this.responseEnd = responseEnd;
+		}
+		public String getInputEnd() {
+			return inputEnd;
+		}
+		public void setInputEnd(String inputEnd) {
+			this.inputEnd = inputEnd;
+		}
+		public String getPasswordEnd() {
+			return passwordEnd;
+		}
+		public void setPasswordEnd(String passwordEnd) {
+			this.passwordEnd = passwordEnd;
+		}
+		public String getFileEditEnd() {
+			return fileEditEnd;
+		}
+		public void setFileEditEnd(String fileEditEnd) {
+			this.fileEditEnd = fileEditEnd;
 		}
 	}
 	
@@ -535,7 +564,8 @@ public class TritonLocalConsole {
 	// you want to be able to run unsupervised management scripts
 	public void start(ConsoleSource source) {
 		threadPool.submit(new Runnable() {
-			private String responseEnd, inputEnd, passwordEnd;
+			// these are deprecated and should be replaced with the values in the instance
+			private String responseEnd, inputEnd, passwordEnd, fileEditEnd;
 			
 			// whether or not this is an interactive session
 			private boolean interactive = true;
@@ -581,8 +611,7 @@ public class TritonLocalConsole {
 					
 					runtime.registerInThread();
 					
-					DeblockingInputStream input = new DeblockingInputStream(source.getInputStream());
-					InputStream main = input.newInputStream();
+					InputStream main = source.getInputStream();
 					
 					// TODO: token?
 					StringBuilder buffered = new StringBuilder();
@@ -637,7 +666,7 @@ public class TritonLocalConsole {
 						}
 						@Override
 						public InputStream getInputStream() {
-							return input.newInputStream();
+							return ((ConsoleSocketSource) source).getDeblockingInput().newInputStream();
 						}
 						@Override
 						public boolean isBlocking() {
@@ -686,6 +715,11 @@ public class TritonLocalConsole {
 							}
 							else if (line.startsWith("Negotiate-Response-End:")) {
 								responseEnd = line.substring("Negotiate-Response-End:".length()).trim();
+								instance.setResponseEnd(responseEnd);
+							}
+							else if (line.startsWith("Negotiate-File-Edit-End:")) {
+								fileEditEnd = line.substring("Negotiate-File-Edit-End:".length()).trim();
+								instance.setFileEditEnd(fileEditEnd);
 							}
 							else if (line.startsWith("Interact-Ping:")) {
 								String content = line.substring("Interact-Ping: ".length()).trim();
@@ -697,9 +731,11 @@ public class TritonLocalConsole {
 							}
 							else if (line.startsWith("Negotiate-Input-End:")) {
 								inputEnd = line.substring("Negotiate-Input-End:".length()).trim();
+								instance.setInputEnd(inputEnd);
 							}
 							else if (line.startsWith("Negotiate-Password-End:")) {
 								passwordEnd = line.substring("Negotiate-Password-End:".length()).trim();
+								instance.setPasswordEnd(passwordEnd);
 							}
 							else if (line.startsWith("Fetch-Meta:")) {
 								String meta = line.substring("Fetch-Meta:".length()).trim();

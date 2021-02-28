@@ -110,6 +110,12 @@ public class Triton {
 		return getFolder("config");
 	}
 	
+	public static File getNewTmpFolder() {
+		File file = new File(Triton.getFolder("tmp"), "t" + UUID.randomUUID().toString().replace("-", ""));
+		file.mkdirs();
+		return file;
+	}
+	
 	public static File getFolder(String name) {
 		// the config can be stored right in the folder
 		// everything else should be in a subfolder
