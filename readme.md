@@ -1,5 +1,7 @@
 # TODO
 
+file upload & download!
+
 virtual file system implementation for Path (inputstreams etc are via path.getFileSystemProvider().newInputStream(path))
 -> once this is done, i can implement nano & less (ship with the terminal)
 can also allow for easy file dropping? e.g. create a temporary folder, drop files in it, return to terminal which is prompted to "continue uploading files [Y/n]"
@@ -79,6 +81,30 @@ In interactive mode it will prompt the user for an answer when edge cases are de
 In unsupervised mode however, there will be no prompt and instead triton will continue as best as possible on the chosen path.
 
 Note that not everything can be done unsupervised.
+
+# File Access
+
+## File Editing
+
+If you want to edit a file on the server you are connected to, you can use the command "nano()". It is of course based on the primitive text editor that ships with most linux systems.
+
+Unlike most triton features, file editing is only available if the client actively enables it, this means a telnet client will not be able to edit files and instead get feedback along the lines of: The attached console does not support file editing.
+
+The terminal client does enable it and by default it uses the awesome nano implementation that ships with jline.
+
+When you want to edit a file, you can type: 
+
+```
+nano("test.txt")
+```
+
+The server will at that point check if the client has registered the file editing capabilities and if so, start a negotiation with the client.
+If the client agrees, the file will first be copied to the client into a tmp folder.
+
+The text editor is then started on the local version of the file.
+Once the text editor closes, the file is streamed back to the server.
+
+Currently there is no pro-active check if the file actually changed during editing, this is an optimization planned for the future.
 
 # Security
 

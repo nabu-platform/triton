@@ -37,6 +37,7 @@ import java.util.zip.ZipOutputStream;
 
 import be.nabu.glue.annotations.GlueParam;
 import be.nabu.glue.core.impl.methods.FileMethods;
+import be.nabu.glue.core.impl.methods.v2.ScriptMethods;
 import be.nabu.glue.core.impl.providers.SystemMethodProvider;
 import be.nabu.libs.evaluator.annotations.MethodProviderClass;
 import be.nabu.libs.resources.ResourceUtils;
@@ -477,7 +478,9 @@ public class TritonMethods {
 			throw new IllegalStateException("No console attached");
 		}
 		else if (!console.isSupportsFileEditing()) {
-			throw new IllegalStateException("The attached console does not support file editing");
+			ScriptMethods.echo("The attached console does not support file editing");
+			return;
+//			throw new IllegalStateException("The attached console does not support file editing");
 		}
 		String directory = SystemMethodProvider.getDirectory();
 		File file = new File(directory, fileName);
@@ -499,6 +502,9 @@ public class TritonMethods {
 				TritonShell.copyOutFile(file, console.getSource().getOutputStream());
 			}
 			readLine = reader.readLine();
+			if (!readLine.endsWith(console.getFileEditEnd())) {
+				throw new IllegalStateException("Did not receive correct reply from client");
+			}
 			String[] parts = readLine.replace(console.getFileEditEnd(), "").split(";", 2);
 			long size = Long.parseLong(parts[0]);
 			// the filename should be the same?
