@@ -21,6 +21,7 @@ import java.security.cert.CertificateEncodingException;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +45,7 @@ import org.jline.utils.AttributedStyle;
 import org.jline.utils.InfoCmp.Capability;
 
 import be.nabu.glue.impl.StandardInputProvider;
+import be.nabu.utils.io.IOUtils;
 import be.nabu.utils.security.KeyStoreHandler;
 import be.nabu.utils.security.SSLContextType;
 import be.nabu.utils.security.SecurityUtils;
@@ -290,6 +292,9 @@ public class TritonShell {
 //				consoleReader.unsetOpt(LineReader.Option.AUTO_MENU);
 //				consoleReader.unsetOpt(LineReader.Option.AUTO_MENU_LIST);
 				
+				// all the aliases
+				Map<String, String> aliases = loadAliases();
+				
 				String line;
 				// the string we pass along is the "prompt" string
 				// the prompt is actually controlled by the remote server
@@ -314,6 +319,30 @@ public class TritonShell {
 						writer.write("Negotiate-Interactive: true\n");
 						writer.flush();
 						readAnswer(reader, ending);
+						continue;
+					}
+					// you want to define an alias
+					// we don't do input parameters, as it would be hard to pass those along (?) (its not a script at the other end, it is just a bunch of lines we send for execution)
+					// but you can do input prompts of course, with default values etc
+					if (line.startsWith("alias:")) {
+						String alias = line.substring("alias:".length()).trim();
+						File folder = Triton.getFolder("alias");
+						File file = new File(folder, alias + ".glue");
+						if (!file.exists()) {
+							file.createNewFile();
+						}
+						Nano nano = new Nano(terminal, folder);
+						nano.open(file.getName());
+						nano.run();
+						String loaded = loadFile(file);
+						// once done, we check if the file is empty and delete it in that case
+						if (loaded == null || loaded.trim().isEmpty()) {
+							file.delete();
+							aliases.remove(alias);
+						}
+						else {
+							aliases.put(alias, loaded);
+						}
 						continue;
 					}
 					// experimental tests
@@ -347,6 +376,12 @@ public class TritonShell {
 					if (line.equals("exit")) {
 						break;
 					}
+					
+					// if its an alias, we run it
+					if (aliases.keySet().contains(line.trim())) {
+						line = aliases.get(line.trim());
+					}
+					
 					running = true;
 					// we need to send line by line so we can read the response
 					String[] split = line.split("\n");
@@ -445,6 +480,27 @@ public class TritonShell {
 		}
 	}
 	
+	private static Map<String, String> loadAliases() {
+		Map<String, String> aliases = new HashMap<String, String>();
+		File folder = Triton.getFolder("alias");
+		for (File child : folder.listFiles()) {
+			if (child.getName().endsWith(".glue")) {
+				aliases.put(child.getName().replaceAll("\\.glue$", ""), loadFile(child));
+			}
+		}
+		return aliases;
+	}
+	
+	private static String loadFile(File file) {
+		try (InputStream input = new BufferedInputStream(new FileInputStream(file))) {
+			byte[] bytes = IOUtils.toBytes(IOUtils.wrap(input));
+			return new String(bytes);
+		}
+		catch (Exception e) {
+			throw new RuntimeException(e);
+		}
+	}
+
 	public static void copyOutFile(File file, OutputStream outputStream) {
 		try (InputStream inputStream = new BufferedInputStream(new FileInputStream(file))) {
 			byte [] buffer = new byte[8096];

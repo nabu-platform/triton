@@ -70,6 +70,8 @@ checked: for non-scripts, do we want to actually unzip so it can be used outside
 
 # Interaction
 
+## Unsupervised
+
 There are two interesting modes that triton (and glue) can operate in:
 
 - interactive
@@ -81,6 +83,31 @@ In interactive mode it will prompt the user for an answer when edge cases are de
 In unsupervised mode however, there will be no prompt and instead triton will continue as best as possible on the chosen path.
 
 Note that not everything can be done unsupervised.
+
+## Aliases
+
+If you have to repeat commands many times, either on the same server or cross server, there are generally two ways to solve this:
+
+- install a new script on every server to automate that task
+- create a local alias to cover it
+
+A local alias is specific to you, no one else can see it or use it. It is available regardless of the server you are connected to.
+
+To create a new alias, type something like this:
+
+```
+$ alias: myAlias
+```
+
+You will then be switched into a nano-based text editor where you can type a regular glue script.
+
+If at a later point in time you then type:
+
+```
+$ myAlias
+```
+
+The client will actually send the script you defined. 
 
 # File Access
 
