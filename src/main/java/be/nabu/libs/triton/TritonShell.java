@@ -27,20 +27,27 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import javax.net.ssl.SSLContext;
 
 import org.jline.builtins.Less;
 import org.jline.builtins.Nano;
+import org.jline.builtins.Nano.SyntaxHighlighter;
 import org.jline.builtins.Source;
+import org.jline.reader.Candidate;
+import org.jline.reader.Completer;
+import org.jline.reader.Highlighter;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
+import org.jline.reader.ParsedLine;
 import org.jline.reader.impl.DefaultParser;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.Terminal.Signal;
 import org.jline.terminal.Terminal.SignalHandler;
 import org.jline.terminal.TerminalBuilder;
 import org.jline.utils.AttributedString;
+import org.jline.utils.AttributedStringBuilder;
 import org.jline.utils.AttributedStyle;
 import org.jline.utils.InfoCmp.Capability;
 
@@ -281,10 +288,76 @@ public class TritonShell {
 				LineReader consoleReader = LineReaderBuilder.builder()
 					.terminal(terminal)
 					.parser(parser)
+					.completer(new Completer() {
+						@Override
+						public void complete(LineReader arg0, ParsedLine arg1, List<Candidate> arg2) {
+							// check amount of string openers
+							int count = arg1.line().length() - arg1.line().replace("\"", "").length();
+							// if it is an even count, we are not in a string, we want to suggest a method
+							// we presumably already typed a bit of the method, so start with that
+							try {
+								// to fully autocomplete, we need to match the full line
+								// so for example if you are typing cat("bu
+								// and autocomplete, we can't just send build.xml
+								// we need cat("build.xml
+								// otherwise it won't complete
+								String starter = null;
+								String soFar;
+								if (count % 2 == 0) {
+									soFar = arg1.line().replaceAll("^.*?([\\w]+$)", "$1");
+									writer.write("Suggest-Method: " + soFar + "\n");
+									writer.flush();
+								}
+								// we are in a string, we probably want to suggest a filename
+								// presumably we already typed a bit of the filename, so let's start it off with that!
+								else {
+									int lastIndexOf = arg1.line().lastIndexOf('"');
+									soFar = arg1.line().substring(lastIndexOf + 1);
+									writer.write("Suggest-File: " + soFar + "\n");
+									writer.flush();
+								}
+								starter = arg1.word().substring(0, arg1.word().length() - soFar.length());
+								String readLine = reader.readLine();
+								if (!readLine.endsWith(ending)) {
+									return;
+								}
+								for (String single : readLine.substring(0, readLine.length() - ending.length()).split(";")) {
+									arg2.add(new Candidate(starter + single));
+								}
+							}
+							catch (Exception e) {
+								
+							}
+						}
+					})
+					.highlighter(new Highlighter() {
+						@Override
+						public AttributedString highlight(LineReader arg0, String arg1) {
+							AttributedStringBuilder builder = new AttributedStringBuilder();
+							return builder.append(arg1)
+								.styleMatches(Pattern.compile("[\\w]+"), AttributedStyle.DEFAULT.bold().foreground(AttributedStyle.WHITE))
+								// highlight some operators (not all)
+								.styleMatches(Pattern.compile("&|\\|"), AttributedStyle.DEFAULT.bold().foreground(AttributedStyle.YELLOW))
+								.styleMatches(Pattern.compile("\\(|\\)"), AttributedStyle.DEFAULT.bold().foreground(AttributedStyle.GREEN).faint())
+								.styleMatches(Pattern.compile("[0-9]+|[0-9]+\\.[0-9]+"), AttributedStyle.DEFAULT.bold().foreground(AttributedStyle.GREEN))
+								.styleMatches(Pattern.compile("[\\w]+(?=\\()"), AttributedStyle.DEFAULT.bold().foreground(AttributedStyle.MAGENTA).faint())
+								// we do string last so everything inside a string is correctly styled
+								.styleMatches(Pattern.compile("\"[^\"]*(\"|$)"), AttributedStyle.DEFAULT.bold().foreground(AttributedStyle.BLUE).faint())
+								.toAttributedString();
+						}
+						@Override
+						public void setErrorIndex(int arg0) {
+							
+						}
+						@Override
+						public void setErrorPattern(Pattern arg0) {
+							
+						}
+					})
 					.variable(LineReader.HISTORY_FILE, history.toPath())
 					.variable(LineReader.SECONDARY_PROMPT_PATTERN, colored("%P -> "))
 					.variable(LineReader.BLINK_MATCHING_PAREN, 0)
-					.variable(LineReader.DISABLE_COMPLETION, true)
+//					.variable(LineReader.DISABLE_COMPLETION, true)
 					.build();
 				
 				// we want to be able to insert bleedin' tabs

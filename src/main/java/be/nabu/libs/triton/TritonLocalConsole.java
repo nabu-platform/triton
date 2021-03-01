@@ -49,6 +49,7 @@ import org.slf4j.LoggerFactory;
 import be.nabu.glue.api.InputProvider;
 import be.nabu.glue.api.StreamProvider;
 import be.nabu.glue.core.impl.executors.EvaluateExecutor;
+import be.nabu.glue.core.impl.providers.SystemMethodProvider;
 import be.nabu.glue.impl.SimpleExecutionEnvironment;
 import be.nabu.glue.impl.StandardInputProvider;
 import be.nabu.glue.impl.formatters.SimpleOutputFormatter;
@@ -331,6 +332,10 @@ public class TritonLocalConsole {
 		catch (UnknownHostException e) {
 			return "anonymous";
 		}
+	}
+	
+	public static String getGroup() {
+		return Triton.getSetting("group", getName());
 	}
 	
 	public static String getOrganisation() {
@@ -742,6 +747,37 @@ public class TritonLocalConsole {
 								if ("name".equalsIgnoreCase(meta)) {
 									writer.write(getName() + "\n");
 								}
+							}
+							else if (line.startsWith("Suggest-Method:")) {
+								writer.write("testingMethod");
+							}
+							else if (line.startsWith("Suggest-File:")) {
+								String soFar = line.substring("Suggest-File:".length()).trim().toLowerCase();
+								StringBuilder builder = new StringBuilder();
+								boolean first = true;
+								File folder = new File(SystemMethodProvider.getDirectory());
+								int lastIndexOf = soFar.lastIndexOf('/');
+								String prefix = "";
+								if (lastIndexOf > 0) {
+									// include trailing /
+									prefix = soFar.substring(0, lastIndexOf + 1);
+									folder = new File(folder, prefix);
+									soFar = soFar.substring(lastIndexOf + 1);
+								}
+								if (folder.exists()) {
+									for (String child : folder.list()) {
+										if (soFar.isEmpty() || child.toLowerCase().startsWith(soFar)) {
+											if (first) {
+												first = false;
+											}
+											else {
+												builder.append(";");
+											}
+											builder.append(prefix + child);
+										}
+									}
+								}
+								writer.write(builder.toString());
 							}
 							else if (line.equals("refresh")) {
 								engine.refresh();

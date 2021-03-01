@@ -1,5 +1,14 @@
 # TODO
 
+local aliases
+-> currently all aliases are global which is nice
+-> sometimes you want an environment specific one!
+-> link it to the name of the server (e.g. bebat-dev1)
+
+would be nice to support group as well
+-> local aliases should work on group, rather than individual
+-> grouped servers are assumed to be identically configured
+
 file upload & download!
 
 virtual file system implementation for Path (inputstreams etc are via path.getFileSystemProvider().newInputStream(path))
