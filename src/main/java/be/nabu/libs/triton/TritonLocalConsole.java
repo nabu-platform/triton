@@ -47,8 +47,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import be.nabu.glue.api.InputProvider;
+import be.nabu.glue.api.MethodDescription;
+import be.nabu.glue.api.ParameterDescription;
 import be.nabu.glue.api.StreamProvider;
+import be.nabu.glue.core.api.MethodProvider;
 import be.nabu.glue.core.impl.executors.EvaluateExecutor;
+import be.nabu.glue.core.impl.parsers.GlueParserProvider;
 import be.nabu.glue.core.impl.providers.SystemMethodProvider;
 import be.nabu.glue.impl.SimpleExecutionEnvironment;
 import be.nabu.glue.impl.StandardInputProvider;
@@ -749,7 +753,49 @@ public class TritonLocalConsole {
 								}
 							}
 							else if (line.startsWith("Suggest-Method:")) {
-								writer.write("testingMethod");
+								String soFar = line.substring("Suggest-Method:".length()).trim().toLowerCase();
+								StringBuilder builder = new StringBuilder();
+								boolean first = true;
+								boolean namespaced = soFar.contains(".");
+								for (MethodProvider provider : engine.getMethodProviders()) {
+									for (MethodDescription description : provider.getAvailableMethods()) {
+										boolean matches = false;
+										if (namespaced && description.getNamespace() != null && (description.getNamespace() + "." + description.getName()).startsWith(soFar)) {
+											matches = true;
+										}
+										else if (!namespaced && description.getName().startsWith(soFar)) {
+											matches = true;
+										}
+										if (matches) {
+											if (first) {
+												first = false;
+											}
+											else {
+												builder.append(";");
+											}
+											String desc = "";
+											List<ParameterDescription> parameters = description.getParameters();
+											if (parameters != null && !parameters.isEmpty()) {
+												for (ParameterDescription parameter : parameters) {
+													if (!desc.isEmpty()) {
+														desc += ", ";
+													}
+													desc += parameter.getName();
+												}
+											}
+											if (namespaced) {
+												builder.append(description.getNamespace() + "." + description.getName());
+											}
+											else {
+												builder.append(description.getName());
+											}
+											if (!desc.isEmpty()) {
+												builder.append("::" + desc);
+											}
+										}
+									}
+								}
+								writer.write(builder.toString());
 							}
 							else if (line.startsWith("Suggest-File:")) {
 								String soFar = line.substring("Suggest-File:".length()).trim().toLowerCase();
@@ -765,15 +811,30 @@ public class TritonLocalConsole {
 									soFar = soFar.substring(lastIndexOf + 1);
 								}
 								if (folder.exists()) {
-									for (String child : folder.list()) {
-										if (soFar.isEmpty() || child.toLowerCase().startsWith(soFar)) {
+									for (File child : folder.listFiles()) {
+										if (soFar.isEmpty() || child.getName().toLowerCase().startsWith(soFar)) {
 											if (first) {
 												first = false;
 											}
 											else {
 												builder.append(";");
 											}
-											builder.append(prefix + child);
+											String description = "";
+											if (child.isFile()) {
+												if (child.length() > 1024l * 1024 * 1024) {
+													description = Math.round((1.0 * child.length()) / (1024l*1024*1024)) + "gb";
+												}
+												else if (child.length() > 1024l * 1024) {
+													description = Math.round((1.0 * child.length()) / (1024l*1024)) + "mb";
+												}
+												else if (child.length() > 1024) {
+													description = Math.round((1.0 * child.length()) / (1024l)) + "kb";
+												}
+												else {
+													description = child.length() + "b";
+												}
+											}
+											builder.append(prefix + child.getName() + (description.isEmpty() ? "" : "::" + description));
 										}
 									}
 								}

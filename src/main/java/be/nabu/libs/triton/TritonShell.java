@@ -289,44 +289,57 @@ public class TritonShell {
 					.terminal(terminal)
 					.parser(parser)
 					.completer(new Completer() {
+						private boolean waiting;
 						@Override
 						public void complete(LineReader arg0, ParsedLine arg1, List<Candidate> arg2) {
-							// check amount of string openers
-							int count = arg1.line().length() - arg1.line().replace("\"", "").length();
-							// if it is an even count, we are not in a string, we want to suggest a method
-							// we presumably already typed a bit of the method, so start with that
-							try {
-								// to fully autocomplete, we need to match the full line
-								// so for example if you are typing cat("bu
-								// and autocomplete, we can't just send build.xml
-								// we need cat("build.xml
-								// otherwise it won't complete
-								String starter = null;
-								String soFar;
-								if (count % 2 == 0) {
-									soFar = arg1.line().replaceAll("^.*?([\\w]+$)", "$1");
-									writer.write("Suggest-Method: " + soFar + "\n");
-									writer.flush();
+							if (!waiting && !arg1.word().isEmpty()) {
+								synchronized(this) {
+									if (!waiting) {
+										waiting = true;
+										// check amount of string openers
+										int count = arg1.line().length() - arg1.line().replace("\"", "").length();
+										// if it is an even count, we are not in a string, we want to suggest a method
+										// we presumably already typed a bit of the method, so start with that
+										try {
+											// to fully autocomplete, we need to match the full line
+											// so for example if you are typing cat("bu
+											// and autocomplete, we can't just send build.xml
+											// we need cat("build.xml
+											// otherwise it won't complete
+											String starter = null;
+											String soFar;
+											if (count % 2 == 0) {
+												soFar = arg1.line().replaceAll("^.*?([\\w.]+$)", "$1");
+												writer.write("Suggest-Method: " + soFar + "\n");
+												writer.flush();
+											}
+											// we are in a string, we probably want to suggest a filename
+											// presumably we already typed a bit of the filename, so let's start it off with that!
+											else {
+												int lastIndexOf = arg1.line().lastIndexOf('"');
+												soFar = arg1.line().substring(lastIndexOf + 1);
+												writer.write("Suggest-File: " + soFar + "\n");
+												writer.flush();
+											}
+											starter = arg1.word().substring(0, arg1.word().length() - soFar.length());
+											String readLine = reader.readLine();
+											if (!readLine.endsWith(ending)) {
+												return;
+											}
+											for (String single : readLine.substring(0, readLine.length() - ending.length()).split(";")) {
+												// allow for a description to be passed along
+												String[] split = single.split("::");
+												arg2.add(new Candidate(starter + split[0], split[0], null, split.length == 2 ? split[1] : null, null, null, false));
+											}
+										}
+										catch (Exception e) {
+											// ignore
+										}
+										finally {
+											waiting = false;
+										}
+									}
 								}
-								// we are in a string, we probably want to suggest a filename
-								// presumably we already typed a bit of the filename, so let's start it off with that!
-								else {
-									int lastIndexOf = arg1.line().lastIndexOf('"');
-									soFar = arg1.line().substring(lastIndexOf + 1);
-									writer.write("Suggest-File: " + soFar + "\n");
-									writer.flush();
-								}
-								starter = arg1.word().substring(0, arg1.word().length() - soFar.length());
-								String readLine = reader.readLine();
-								if (!readLine.endsWith(ending)) {
-									return;
-								}
-								for (String single : readLine.substring(0, readLine.length() - ending.length()).split(";")) {
-									arg2.add(new Candidate(starter + single));
-								}
-							}
-							catch (Exception e) {
-								
 							}
 						}
 					})

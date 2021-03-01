@@ -88,5 +88,12 @@ public class TritonGlueEngine {
 	public void setSandboxed(boolean sandboxed) {
 		this.sandboxed = sandboxed;
 	}
+
+	public GlueParserProvider getParserProvider() {
+		return parserProvider;
+	}
 	
+	public MethodProvider[] getMethodProviders() {
+		return parserProvider.getMethodProviders(repository);
+	}
 }
