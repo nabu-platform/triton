@@ -834,7 +834,7 @@ public class TritonLocalConsole {
 													description = child.length() + "b";
 												}
 											}
-											builder.append(prefix + child.getName() + (description.isEmpty() ? "" : "::" + description));
+											builder.append(prefix + child.getName() + (child.isDirectory() ? "/" : "") + (description.isEmpty() ? "" : "::" + description));
 										}
 									}
 								}
