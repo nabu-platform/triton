@@ -840,6 +840,11 @@ public class TritonLocalConsole {
 								}
 								writer.write(builder.toString());
 							}
+							// make sure we are future proof
+							// if a newer triton client connects to an older server and it has new negotiating features, we don't want the server to fail
+							else if (line.matches("^[\\s]*[\\w-]+[\\s]*:.*")) {
+								logger.warn("Unknown negotiation: " + line);
+							}
 							else if (line.equals("refresh")) {
 								engine.refresh();
 							}
