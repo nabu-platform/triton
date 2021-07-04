@@ -3,3 +3,4 @@
 /target
 /.settings
 /.flattened-pom.xml
+.triton-client-latest.deb
