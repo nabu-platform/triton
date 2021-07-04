@@ -36,6 +36,7 @@ import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
 import be.nabu.glue.annotations.GlueParam;
+import be.nabu.glue.api.InputProvider;
 import be.nabu.glue.core.impl.methods.FileMethods;
 import be.nabu.glue.core.impl.methods.v2.ScriptMethods;
 import be.nabu.glue.core.impl.providers.SystemMethodProvider;
@@ -154,7 +155,11 @@ public class TritonMethods {
 	
 	// sign a particular package with a particular profile (default profile if left empty)
 	// you can create the package using classic "zip" methods
-	public byte[] sign(Object zipContent, String module, String version, String profile, String profilePassword) throws IOException, UnrecoverableKeyException, KeyStoreException, NoSuchAlgorithmException, CertificateEncodingException, InvalidKeyException, SignatureException {
+	public byte[] sign(@GlueParam(name = "zip") Object zipContent, 
+			@GlueParam(name = "module") String module, 
+			@GlueParam(name = "version") String version, 
+			@GlueParam(name = "profile") String profile, 
+			@GlueParam(name = "password") String profilePassword) throws IOException, UnrecoverableKeyException, KeyStoreException, NoSuchAlgorithmException, CertificateEncodingException, InvalidKeyException, SignatureException {
 		if (module == null) {
 			throw new IllegalArgumentException("Must provide a module name");
 		}
@@ -184,9 +189,17 @@ public class TritonMethods {
 				profile = TritonLocalConsole.getProfile();
 			}
 			String keyPassword = profilePassword == null ? "triton-password" : profilePassword;
-			// force generation of key if relevant
-			TritonLocalConsole.getContext(profile, keyPassword, false);
 			KeyStoreHandler packagingKeystore = TritonLocalConsole.getPackagingKeystore();
+			if (!packagingKeystore.getPrivateKeyAliases().contains(profile)) {
+				InputProvider inputProvider = TritonLocalConsole.getConsole().getInputProvider();
+				if (inputProvider != null) {
+					String name = inputProvider.input("What is the name of your new author profile? [" + profile + "]", false, profile);
+					// force generation of key
+					TritonLocalConsole.getContext(profile, keyPassword, false, name);
+				}
+			}
+			// refetch the keystore
+			packagingKeystore = TritonLocalConsole.getPackagingKeystore();
 			Certificate[] certificateChain = packagingKeystore.getKeyStore().getCertificateChain(profile);
 			PrivateKey privateKey = packagingKeystore.getPrivateKey(profile, keyPassword);
 			sign(manifest, privateKey, null, memoryDirectory);

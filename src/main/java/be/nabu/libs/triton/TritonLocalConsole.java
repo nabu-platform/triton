@@ -395,13 +395,17 @@ public class TritonLocalConsole {
 	}
 	
 	public static SSLContext getContext(String profile, String keyPassword, boolean authentication) {
+		return getContext(profile, keyPassword, authentication, getName());
+	}
+	
+	public static SSLContext getContext(String profile, String keyPassword, boolean authentication, String name) {
 		try {
 			KeyStoreHandler keystore = authentication ? getAuthenticationKeystore() : getPackagingKeystore();
 			PrivateKey privateKey = keystore.getPrivateKey(profile, keyPassword);
 			// if we don't have a key yet, generate a self signed set
 			if (privateKey == null) {
 				KeyPair pair = SecurityUtils.generateKeyPair(KeyPairType.RSA, 4096);
-				X500Principal principal = SecurityUtils.createX500Principal(getName(), getOrganisation(), getOrganisationalUnit(), getLocality(), getState(), getCountry());
+				X500Principal principal = SecurityUtils.createX500Principal(name, getOrganisation(), getOrganisationalUnit(), getLocality(), getState(), getCountry());
 				X509Certificate certificate = BCSecurityUtils.generateSelfSignedCertificate(pair, new Date(new Date().getTime() + (1000l * 60 * 60 * 24 * 365 * 100)), principal, principal);
 				keystore.set(profile, pair.getPrivate(), new X509Certificate[] { certificate }, keyPassword);
 				if (authentication) {
@@ -850,7 +854,7 @@ public class TritonLocalConsole {
 							}
 							// signal for multiline...
 							else if (trimmed.endsWith("\\")) {
-								buffered.append(line.replaceAll("[\\\\s]+$", "")).append("\n");
+								buffered.append(line.replaceAll("[\\\\\\s]+$", "")).append("\n");
 							}
 							else {
 								buffered.append(line);

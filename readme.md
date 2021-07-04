@@ -306,6 +306,8 @@ If any file is unsigned or has a faulty signature, the entire zip is ignored.
 
 An example of how we can create a simple signed zip, we log in with the triton console and type this:
 
+Note that the second parameter for the sign method is the module name.
+
 ```
 $ content = zip(structure(scripts: structure(lambda("test.glue"): "echo('hello!')")))
 $ write("/home/alex/tmp/test-unsigned.zip", content)
@@ -467,8 +469,23 @@ sudo dpkg --remove --force-remove-reinstreq triton-server
 sudo rm -rf /opt/triton-server/
 ```
 
+# Installing on amazon ubuntu
 
+```
+bash <(wget -qO- https://my.nabu.be/resources/triton-install.sh)
+```
 
+Boot triton using triton-start (may need to source the .bashrc), then in triton:
+
+```
+install("https://my.nabu.be/resources/nabu-v1.zip")
+```
+
+Then run:
+
+```
+nabu.install()
+```
 
 
 # Misc

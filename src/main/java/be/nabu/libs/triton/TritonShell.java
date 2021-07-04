@@ -276,7 +276,7 @@ public class TritonShell {
 				terminal.writer().println("- show			Show the script so far");
 				terminal.writer().println("- state			Print the current variable state");
 				terminal.writer().println("- allow			Add client cert to server to connect securely");
-				terminal.writer().println("- self			Print client cert for installation");
+				terminal.writer().println("- self(ie)		Print client cert for installation with or without the addUser wrapper");
 				terminal.writer().println("- (un)supervised	Toggle between supervised and unsupervised mode");
 				terminal.writer().println("_______________________________________________________________\n");
 				
@@ -391,6 +391,12 @@ public class TritonShell {
 				while ((line = consoleReader.readLine(serverName + "$ ")) != null) {
 					if (line.equals("self")) {
 						String certWriter = encodeCert();
+						terminal.writer().println(certWriter);
+						terminal.writer().flush();
+						continue;
+					}
+					else if (line.equals("selfie")) {
+						String certWriter = encodeCertWithWrapper();
 						terminal.writer().println(certWriter);
 						terminal.writer().flush();
 						continue;
@@ -622,6 +628,13 @@ public class TritonShell {
 	}
 	
 
+	private static String encodeCertWithWrapper() throws CertificateEncodingException, KeyStoreException, IOException {
+		String certWriter = encodeCert();
+		certWriter = certWriter.replaceAll("(?m)^", "\t");
+		certWriter = "addUser('" + certWriter.trim() + "')";
+		return certWriter;
+	}
+	
 	private static String encodeCert() throws KeyStoreException, CertificateEncodingException, IOException {
 		X509Certificate certificate = TritonLocalConsole.getAuthenticationKeystore().getCertificate(TritonLocalConsole.getProfile());
 		return encodeCert(certificate);
@@ -643,7 +656,9 @@ public class TritonShell {
 			createProfile();
 		}
 		else {
-			input = input.replaceAll("[^\\w]+", "-");
+			String profileName = standardInputProvider.input("Username for this profile [" + name + "]: ", false, name);
+			input = input.replaceAll("[^\\w.@-]+", "-");
+			System.setProperty("name", profileName);
 			System.setProperty("triton.profile", input);
 		}
 	}
@@ -838,6 +853,7 @@ public class TritonShell {
 					System.out.println(i++ + ") Create new profile");
 					System.out.println(i++ + ") Remove existing profile");
 					System.out.println(i++ + ") Print certificate");
+					System.out.println(i++ + ") Print certificate with addUser");
 //					System.out.println(i++ + ") Exit");
 					System.out.println();
 					String input = standardInputProvider.input("Choose profile [" + (first == null ? "none" : profiles.get(first - 1)) + "]: ", false, first == null ? "" + (profiles.size() + 5) : first.toString());
@@ -883,7 +899,8 @@ public class TritonShell {
 							}
 						}
 						// print the cert
-						else if (profileIndex == profiles.size() + 3) {
+						else if (profileIndex == profiles.size() + 3 || profileIndex == profiles.size() + 4) {
+							boolean wrap = profileIndex == profiles.size() + 4;
 							System.out.println();
 							input = standardInputProvider.input("Choose profile to print: ", false, null);
 							if (input == null || input.trim().isEmpty()) {
@@ -912,8 +929,12 @@ public class TritonShell {
 									return;
 								}
 								X509Certificate[] x509Certificates = authenticationKeystore.getPrivateKeys().get(profileToPrint);
+								String encodedCert = encodeCert(x509Certificates[0]);
+								if (wrap) {
+									encodedCert = "addUser('" + encodedCert.replaceAll("(?m)^", "\t").trim().replaceAll("([\r\n]+)", "\\\\$1") + "')\n";
+								}
 								System.out.println();
-								System.out.println(encodeCert(x509Certificates[0]));
+								System.out.println(encodedCert);
 								chooseProfile();
 								return;
 							}
