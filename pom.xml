@@ -1,24 +1,20 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://maven.apache.org/POM/4.0.0" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>be.nabu.triton</groupId>
 	<artifactId>triton</artifactId>
-	<version>${be.nabu.triton-triton-version}</version>
+	<version>1.0-SNAPSHOT</version>
 	<packaging>jar</packaging>
 	<name>triton</name>
 	<url>http://nabu.be</url>
-
 	<parent>
 		<groupId>be.nabu</groupId>
 		<artifactId>core</artifactId>
 		<version>1.0-SNAPSHOT</version>
 	</parent>
-	
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 	</properties>
-	
 	<build>
 		<plugins>
 			<plugin>
@@ -43,7 +39,6 @@
 			</plugin>
 		</plugins>
 	</build>
-	
 	<dependencies>
 		<dependency>
 			<groupId>be.nabu.libs.events</groupId>
@@ -53,7 +48,6 @@
 			<groupId>be.nabu.libs.events</groupId>
 			<artifactId>events-impl</artifactId>
 		</dependency>
-		
 		<dependency>
 			<groupId>be.nabu.glue</groupId>
 			<artifactId>glue-api</artifactId>
@@ -62,12 +56,10 @@
 			<groupId>be.nabu.glue</groupId>
 			<artifactId>glue</artifactId>
 		</dependency>
-		
 		<dependency>
 			<groupId>be.nabu.libs.evaluator</groupId>
 			<artifactId>evaluator-types</artifactId>
 		</dependency>
-		
 		<dependency>
 			<groupId>be.nabu.glue</groupId>
 			<artifactId>glue-integrator</artifactId>
@@ -84,7 +76,6 @@
 			<groupId>be.nabu.glue</groupId>
 			<artifactId>glue-types</artifactId>
 		</dependency>
-		
 		<dependency>
 			<groupId>be.nabu.libs.http</groupId>
 			<artifactId>http-client</artifactId>
@@ -97,7 +88,6 @@
 			<groupId>be.nabu.libs.http</groupId>
 			<artifactId>http-server-websockets</artifactId>
 		</dependency>
-		
 		<dependency>
 			<groupId>be.nabu.libs.types</groupId>
 			<artifactId>types-binding-xml</artifactId>
@@ -106,7 +96,6 @@
 			<groupId>be.nabu.libs.types</groupId>
 			<artifactId>types-binding-json</artifactId>
 		</dependency>
-		
 		<dependency>
 			<groupId>be.nabu.libs.resources</groupId>
 			<artifactId>resources-file</artifactId>
@@ -115,43 +104,34 @@
 			<groupId>be.nabu.libs.resources</groupId>
 			<artifactId>resources-zip</artifactId>
 		</dependency>
-		
 		<dependency>
 			<groupId>be.nabu.libs.authentication</groupId>
 			<artifactId>authentication-api</artifactId>
 		</dependency>
-		
 		<dependency>
 			<groupId>be.nabu.utils</groupId>
 			<artifactId>utils-security</artifactId>
 		</dependency>
-		
-		<!-- https://mvnrepository.com/artifact/org.jline/jline -->
 		<dependency>
-		    <groupId>org.jline</groupId>
-		    <artifactId>jline</artifactId>
-		    <version>3.18.0</version>
+			<groupId>org.jline</groupId>
+			<artifactId>jline</artifactId>
+			<version>3.18.0</version>
 		</dependency>
-		<!-- https://mvnrepository.com/artifact/org.jline/jline-terminal -->
 		<dependency>
-		    <groupId>org.jline</groupId>
-		    <artifactId>jline-terminal</artifactId>
-		    <version>3.18.0</version>
+			<groupId>org.jline</groupId>
+			<artifactId>jline-terminal</artifactId>
+			<version>3.18.0</version>
 		</dependency>
-		
 		<dependency>
-		    <groupId>com.github.oshi</groupId>
-		    <artifactId>oshi-core</artifactId>
-		    <version>5.3.7</version>
+			<groupId>com.github.oshi</groupId>
+			<artifactId>oshi-core</artifactId>
+			<version>5.3.7</version>
 		</dependency>
-		
 		<dependency>
 			<groupId>ch.qos.logback</groupId>
 			<artifactId>logback-classic</artifactId>
 			<version>1.2.3</version>
 		</dependency>
-		
-		<!-- always the same thing... -->
 		<dependency>
 			<groupId>javax.xml.bind</groupId>
 			<artifactId>jaxb-api</artifactId>
@@ -168,5 +148,4 @@
 			<version>2.3.0</version>
 		</dependency>
 	</dependencies>
-
 </project>
